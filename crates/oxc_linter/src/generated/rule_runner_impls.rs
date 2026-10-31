@@ -5651,6 +5651,11 @@ impl RuleRunner
     const RUN_FUNCTIONS: RuleRunFunctionsImplemented = RuleRunFunctionsImplemented::Unknown;
 }
 
+impl RuleRunner for crate::rules::custom_tsgolint_oxlint_rules::no_array_length_assignment::NoArrayLengthAssignment {
+    const NODE_TYPES: Option<&AstTypesBitset> = None;
+    const RUN_FUNCTIONS: RuleRunFunctionsImplemented = RuleRunFunctionsImplemented::Unknown;
+}
+
 impl RuleRunner for crate::rules::custom_tsgolint_oxlint_rules::no_async_global_functions::NoAsyncGlobalFunctions {
     const NODE_TYPES: Option<&AstTypesBitset> = None;
     const RUN_FUNCTIONS: RuleRunFunctionsImplemented = RuleRunFunctionsImplemented::Unknown;
@@ -5663,17 +5668,17 @@ impl RuleRunner
     const RUN_FUNCTIONS: RuleRunFunctionsImplemented = RuleRunFunctionsImplemented::Unknown;
 }
 
-impl RuleRunner for crate::rules::custom_tsgolint_oxlint_rules::no_array_length_assignment::NoArrayLengthAssignment {
-    const NODE_TYPES: Option<&AstTypesBitset> = None;
-    const RUN_FUNCTIONS: RuleRunFunctionsImplemented = RuleRunFunctionsImplemented::Unknown;
-}
-
 impl RuleRunner for crate::rules::custom_tsgolint_oxlint_rules::no_banned_types_in_exports::NoBannedTypesInExports {
     const NODE_TYPES: Option<&AstTypesBitset> = None;
     const RUN_FUNCTIONS: RuleRunFunctionsImplemented = RuleRunFunctionsImplemented::Unknown;
 }
 
 impl RuleRunner for crate::rules::custom_tsgolint_oxlint_rules::no_banned_words::NoBannedWords {
+    const NODE_TYPES: Option<&AstTypesBitset> = None;
+    const RUN_FUNCTIONS: RuleRunFunctionsImplemented = RuleRunFunctionsImplemented::Unknown;
+}
+
+impl RuleRunner for crate::rules::custom_tsgolint_oxlint_rules::no_bare_logger_outside_super::NoBareLoggerOutsideSuper {
     const NODE_TYPES: Option<&AstTypesBitset> = None;
     const RUN_FUNCTIONS: RuleRunFunctionsImplemented = RuleRunFunctionsImplemented::Unknown;
 }
@@ -5691,11 +5696,6 @@ impl RuleRunner for crate::rules::custom_tsgolint_oxlint_rules::no_comments::NoC
 }
 
 impl RuleRunner for crate::rules::custom_tsgolint_oxlint_rules::no_curl::NoCurl {
-    const NODE_TYPES: Option<&AstTypesBitset> = None;
-    const RUN_FUNCTIONS: RuleRunFunctionsImplemented = RuleRunFunctionsImplemented::Unknown;
-}
-
-impl RuleRunner for crate::rules::custom_tsgolint_oxlint_rules::prefer_await_to_callbacks::PreferAwaitToCallbacks {
     const NODE_TYPES: Option<&AstTypesBitset> = None;
     const RUN_FUNCTIONS: RuleRunFunctionsImplemented = RuleRunFunctionsImplemented::Unknown;
 }
@@ -5797,6 +5797,11 @@ impl RuleRunner for crate::rules::custom_tsgolint_oxlint_rules::no_string_error:
     const RUN_FUNCTIONS: RuleRunFunctionsImplemented = RuleRunFunctionsImplemented::Unknown;
 }
 
+impl RuleRunner for crate::rules::custom_tsgolint_oxlint_rules::no_export_rename::NoExportRename {
+    const NODE_TYPES: Option<&AstTypesBitset> = None;
+    const RUN_FUNCTIONS: RuleRunFunctionsImplemented = RuleRunFunctionsImplemented::Unknown;
+}
+
 impl RuleRunner for crate::rules::custom_tsgolint_oxlint_rules::no_string_raw::NoStringRaw {
     const NODE_TYPES: Option<&AstTypesBitset> = None;
     const RUN_FUNCTIONS: RuleRunFunctionsImplemented = RuleRunFunctionsImplemented::Unknown;
@@ -5831,6 +5836,11 @@ impl RuleRunner
     const RUN_FUNCTIONS: RuleRunFunctionsImplemented = RuleRunFunctionsImplemented::Unknown;
 }
 
+impl RuleRunner for crate::rules::custom_tsgolint_oxlint_rules::prefer_await_to_callbacks::PreferAwaitToCallbacks {
+    const NODE_TYPES: Option<&AstTypesBitset> = None;
+    const RUN_FUNCTIONS: RuleRunFunctionsImplemented = RuleRunFunctionsImplemented::Unknown;
+}
+
 impl RuleRunner
     for crate::rules::custom_tsgolint_oxlint_rules::prefer_super_over_this::PreferSuperOverThis
 {
@@ -5853,13 +5863,6 @@ impl RuleRunner
 }
 
 impl RuleRunner for crate::rules::custom_tsgolint_oxlint_rules::require_abort_signal_in_while::RequireAbortSignalInWhile {
-    const NODE_TYPES: Option<&AstTypesBitset> = None;
-    const RUN_FUNCTIONS: RuleRunFunctionsImplemented = RuleRunFunctionsImplemented::Unknown;
-}
-
-impl RuleRunner
-    for crate::rules::custom_tsgolint_oxlint_rules::require_link_signal::RequireLinkSignal
-{
     const NODE_TYPES: Option<&AstTypesBitset> = None;
     const RUN_FUNCTIONS: RuleRunFunctionsImplemented = RuleRunFunctionsImplemented::Unknown;
 }
@@ -5905,6 +5908,25 @@ impl RuleRunner for crate::rules::custom_tsgolint_oxlint_rules::require_fs_utf8:
 }
 
 impl RuleRunner
+    for crate::rules::custom_tsgolint_oxlint_rules::require_it_timeout::RequireItTimeout
+{
+    const NODE_TYPES: Option<&AstTypesBitset> = None;
+    const RUN_FUNCTIONS: RuleRunFunctionsImplemented = RuleRunFunctionsImplemented::Unknown;
+}
+
+impl RuleRunner
+    for crate::rules::custom_tsgolint_oxlint_rules::require_link_signal::RequireLinkSignal
+{
+    const NODE_TYPES: Option<&AstTypesBitset> = None;
+    const RUN_FUNCTIONS: RuleRunFunctionsImplemented = RuleRunFunctionsImplemented::Unknown;
+}
+
+impl RuleRunner for crate::rules::custom_tsgolint_oxlint_rules::require_logger_child_in_super::RequireLoggerChildInSuper {
+    const NODE_TYPES: Option<&AstTypesBitset> = None;
+    const RUN_FUNCTIONS: RuleRunFunctionsImplemented = RuleRunFunctionsImplemented::Unknown;
+}
+
+impl RuleRunner
     for crate::rules::custom_tsgolint_oxlint_rules::require_object_params::RequireObjectParams
 {
     const NODE_TYPES: Option<&AstTypesBitset> = None;
@@ -5916,31 +5938,7 @@ impl RuleRunner for crate::rules::custom_tsgolint_oxlint_rules::require_os_eol::
     const RUN_FUNCTIONS: RuleRunFunctionsImplemented = RuleRunFunctionsImplemented::Unknown;
 }
 
-impl RuleRunner for crate::rules::custom_tsgolint_oxlint_rules::no_bare_logger_outside_super::NoBareLoggerOutsideSuper {
-    const NODE_TYPES: Option<&AstTypesBitset> = None;
-    const RUN_FUNCTIONS: RuleRunFunctionsImplemented = RuleRunFunctionsImplemented::Unknown;
-}
-
-impl RuleRunner for crate::rules::custom_tsgolint_oxlint_rules::require_logger_child_in_super::RequireLoggerChildInSuper {
-    const NODE_TYPES: Option<&AstTypesBitset> = None;
-    const RUN_FUNCTIONS: RuleRunFunctionsImplemented = RuleRunFunctionsImplemented::Unknown;
-}
-
-impl RuleRunner
-    for crate::rules::custom_tsgolint_oxlint_rules::require_it_timeout::RequireItTimeout
-{
-    const NODE_TYPES: Option<&AstTypesBitset> = None;
-    const RUN_FUNCTIONS: RuleRunFunctionsImplemented = RuleRunFunctionsImplemented::Unknown;
-}
-
 impl RuleRunner for crate::rules::custom_tsgolint_oxlint_rules::require_track::RequireTrack {
-    const NODE_TYPES: Option<&AstTypesBitset> = None;
-    const RUN_FUNCTIONS: RuleRunFunctionsImplemented = RuleRunFunctionsImplemented::Unknown;
-}
-
-impl RuleRunner
-    for crate::rules::custom_tsgolint_oxlint_rules::super_first_statement::SuperFirstStatement
-{
     const NODE_TYPES: Option<&AstTypesBitset> = None;
     const RUN_FUNCTIONS: RuleRunFunctionsImplemented = RuleRunFunctionsImplemented::Unknown;
 }
@@ -5961,6 +5959,13 @@ impl RuleRunner
 
 impl RuleRunner
     for crate::rules::custom_tsgolint_oxlint_rules::require_zod_describe::RequireZodDescribe
+{
+    const NODE_TYPES: Option<&AstTypesBitset> = None;
+    const RUN_FUNCTIONS: RuleRunFunctionsImplemented = RuleRunFunctionsImplemented::Unknown;
+}
+
+impl RuleRunner
+    for crate::rules::custom_tsgolint_oxlint_rules::super_first_statement::SuperFirstStatement
 {
     const NODE_TYPES: Option<&AstTypesBitset> = None;
     const RUN_FUNCTIONS: RuleRunFunctionsImplemented = RuleRunFunctionsImplemented::Unknown;

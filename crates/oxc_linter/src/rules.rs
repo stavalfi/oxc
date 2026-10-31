@@ -1017,6 +1017,7 @@ pub(crate) mod custom_tsgolint_oxlint_rules {
     pub mod no_single_use_interface;
     pub mod no_static_with_this_args;
     pub mod no_string_error;
+    pub mod no_export_rename;
     pub mod no_string_raw;
     pub mod no_tracked_close;
     pub mod no_useless_template_cast;
