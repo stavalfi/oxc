@@ -770,7 +770,7 @@ mod tests {
                 uri: Uri::from_str("file:///root/file.js").unwrap(),
                 range: Range::default(),
                 context: CodeActionContext::default(),
-                is_open_document: false,
+                document_version: None,
             })
             .await;
 
@@ -781,7 +781,7 @@ mod tests {
                 uri: Uri::from_str("file:///root/code_action.config").unwrap(),
                 range: Range::default(),
                 context: CodeActionContext::default(),
-                is_open_document: false,
+                document_version: None,
             })
             .await;
 
@@ -843,7 +843,7 @@ mod tests {
             .await
             .unwrap();
 
-        assert!(no_diagnostics.is_empty());
+        assert_eq!(no_diagnostics, []);
 
         let error = worker
             .run_diagnostic(TextDocument::new(
@@ -907,7 +907,7 @@ mod tests {
             .await
             .unwrap();
 
-        assert!(no_diagnostics.is_empty());
+        assert_eq!(no_diagnostics, []);
 
         let error = worker
             .run_diagnostic_on_change(TextDocument::new(
@@ -970,7 +970,7 @@ mod tests {
             .await
             .unwrap();
 
-        assert!(no_diagnostics.is_empty());
+        assert_eq!(no_diagnostics, []);
 
         let error = worker
             .run_diagnostic_on_save(TextDocument::new(

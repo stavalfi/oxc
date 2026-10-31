@@ -4,6 +4,44 @@ All notable changes to this package will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0).
 
+## [0.156.0] - 2026-10-27
+
+### 🐛 Bug Fixes
+
+- af0258d parser: Parse source imports named type (#28062) (camc314)
+- 83633a7 parser: Parse escaped class field names after initializers (#28061) (camc314)
+- 90c58ac parser: Parse postfix updates of sloppy `let` identifiers (#28060) (camc314)
+
+### ⚡ Performance
+
+- a22c9f2 parser: Move annotation comment handling out of hot paths (#28139) (camc314)
+
+## [0.154.0] - 2026-10-13
+
+### 💥 BREAKING CHANGES
+
+- 7730e14 ast: [**BREAKING**] Refactor comment attachment storage (#27512) (camc314)
+- c904b61 ast: [**BREAKING**] Add comment attachment storage (#27393) (camc314)
+- b5e8eff parser: [**BREAKING**] Assign node IDs during parsing (#27411) (camc314)
+
+### 🐛 Bug Fixes
+
+- c57d9c7 parser: Apply no-side-effects annotations after export (#27504) (camc314)
+
+## [0.153.0] - 2026-10-05
+
+### 🐛 Bug Fixes
+
+- 6a7d48b parser: Report abstract private field error on modifier (#27314) (camc314)
+- 2ff6fb5 parser: Include generator marker in overload diagnostic span (#27313) (camc314)
+- 4359a66 parser: Reject TypeScript class modifiers in JavaScript (#27312) (camc314)
+- d0b9372 parser: Remove type-dependent tuple rest diagnostics (#27234) (camc314)
+- 3d61a59 parser: Validate TypeScript type member separators (#27222) (camc314)
+- b2793fa parser: Reject module syntax in script (#27220) (leaysgur)
+- 5914a24 parser: Report `TS1243` for abstract async methods (#27192) (camc314)
+- c6c6e5e parser: Report `TS1242` for interfaces with `abstract` modifier (#27191) (camc314)
+- dd0bbb9 parser: Avoid duplicate index signature modifier diagnostic (#27190) (camc314)
+
 ## [0.152.0] - 2026-09-28
 
 ### 🐛 Bug Fixes

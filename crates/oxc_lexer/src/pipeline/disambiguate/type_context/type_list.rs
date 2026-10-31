@@ -60,12 +60,10 @@ fn type_list_legal(tokens: &Tokens, lo: usize, hi: usize) -> bool {
     let Tokens { src, st, kind, .. } = *tokens;
     let mut start = true;
     let mut braces: i32 = 0;
-    let mut brackets: i32 = 0;
     let mut angle_bits: u64 = 0;
     let mut angle_depth: u32 = 0;
     let mut paren_ok = false;
     let mut cond_ok = false;
-    let mut parens: i32 = 0;
     // Open brackets, innermost last; { is : inside a member's type, a computed key's [ is k.
     let mut open: Vec<u8> = Vec::new();
     // Conditional types whose : is still to come, outside braces, brackets and parens.
@@ -199,22 +197,14 @@ fn type_list_legal(tokens: &Tokens, lo: usize, hi: usize) -> bool {
                     if !start && braces == 0 && !paren_ok {
                         return false;
                     }
-                    parens += 1;
                     open.push(c);
                     start = true;
                 }
-                b')' => {
-                    parens -= 1;
-                    open.pop();
-                    start = false;
-                }
-                b']' => {
-                    brackets -= 1;
+                b')' | b']' => {
                     open.pop();
                     start = false;
                 }
                 b'[' => {
-                    brackets += 1;
                     open.push(if open.last() == Some(&b'{') { b'k' } else { c });
                     start = true;
                 }
@@ -269,7 +259,7 @@ fn type_list_legal(tokens: &Tokens, lo: usize, hi: usize) -> bool {
                     start = true;
                 }
                 b':' => {
-                    if braces == 0 && brackets == 0 && parens == 0 {
+                    if open.is_empty() {
                         if colons == 0 {
                             return false;
                         }
@@ -287,10 +277,10 @@ fn type_list_legal(tokens: &Tokens, lo: usize, hi: usize) -> bool {
                     start = true;
                 }
                 b',' => {
-                    if angle_depth == 0 && braces == 0 && brackets == 0 && parens == 0 {
-                        cond_ok = false;
-                    }
-                    if braces == 0 && brackets == 0 && parens == 0 {
+                    if open.is_empty() {
+                        if angle_depth == 0 {
+                            cond_ok = false;
+                        }
                         elem_start = true;
                     }
                     if let Some(b @ b':') = open.last_mut() {
@@ -360,7 +350,7 @@ fn type_list_legal(tokens: &Tokens, lo: usize, hi: usize) -> bool {
 
 /// A keyword that is a whole type by itself, as any, null or this, and takes no type arguments.
 #[rustfmt::skip::macros(matches_tk)]
-pub(crate) fn keyword_type(kw: u8) -> bool {
+pub fn keyword_type(kw: u8) -> bool {
     matches_tk!(
         kw,
         KwAny | KwBigInt | KwBoolean | KwNever | KwNumber | KwObject | KwString | KwSymbol
@@ -384,7 +374,7 @@ fn type_illegal_kind(k: u8) -> bool {
 /// position: a balanced list whose contents are types and whose closer is followed by a token that
 /// cannot start an expression. In a type, every `<` after a name opens a list, so a `<` this
 /// accepts opens one in any context.
-pub(crate) fn type_args_at(tokens: &Tokens, lt: usize) -> bool {
+pub fn type_args_at(tokens: &Tokens, lt: usize) -> bool {
     let closers = tokens.closers;
     if let Some(yes) = closers.get(lt).and_then(|r| r.args) {
         return yes;
