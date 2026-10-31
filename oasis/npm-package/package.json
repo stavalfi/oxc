@@ -25,10 +25,10 @@
     "./package.json": "./package.json"
   },
   "peerDependencies": {
-    "oxlint-tsgolint": ">=7.0.2003"
+    "@stavalfi/tsgolint": ">=7.0.2003"
   },
   "peerDependenciesMeta": {
-    "oxlint-tsgolint": {
+    "@stavalfi/tsgolint": {
       "optional": true
     }
   },
