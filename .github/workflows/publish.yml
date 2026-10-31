@@ -19,6 +19,8 @@ concurrency:
 
 jobs:
   publish:
+    # A manual run can target any branch; only main publishes.
+    if: github.ref == 'refs/heads/main'
     # The package ships only the napi addon of the machine that built it, and
     # poc runs oxlint on darwin-arm64.
     runs-on: macos-15
