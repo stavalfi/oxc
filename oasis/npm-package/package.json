@@ -5,7 +5,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/stavalfi-oasis/oxc.git"
+    "url": "git+https://github.com/stavalfi/oxc.git"
   },
   "bin": {
     "oxlint": "bin/oxlint"
