@@ -8,7 +8,10 @@ use oxc_span::{GetSpan, Span};
 use oxc_syntax::operator::UnaryOperator;
 
 use crate::{
-    AstNode, ast_util::outermost_paren_parent, context::LintContext, rule::Rule,
+    AstNode,
+    ast_util::{get_declaration_of_variable, outermost_paren_parent},
+    context::LintContext,
+    rule::Rule,
     utils::is_logical_expression,
 };
 
@@ -145,6 +148,19 @@ impl Rule for PreferRegexpTest {
             return;
         }
 
+        // Without types, `x.match(y)` / `x.exec(y)` may not be about a RegExp at all
+        // (redux's `actionCreator.match(action)`, `child_process.exec(cmd)`), so only
+        // rewrite when the RegExp is known — as eslint-plugin-unicorn does.
+        let regexp = if is_match {
+            call_expr.arguments[0].as_expression()
+        } else {
+            Some(member_expr.object())
+        };
+        if !regexp.is_some_and(|regexp| is_known_regexp(regexp, ctx)) {
+            ctx.diagnostic(prefer_regexp_test_diagnostic(span));
+            return;
+        }
+
         ctx.diagnostic_with_fix(prefer_regexp_test_diagnostic(span), |fixer| {
             if !is_match {
                 return fixer.replace(span, "test");
@@ -158,6 +174,34 @@ impl Rule for PreferRegexpTest {
             fix.with_message("Replace with `RegExp.test()`")
         });
     }
+}
+
+/// A RegExp literal, `new RegExp(..)` / `RegExp(..)`, or a `const` bound to one.
+fn is_known_regexp<'a>(expr: &Expression<'a>, ctx: &LintContext<'a>) -> bool {
+    match expr.get_inner_expression() {
+        Expression::RegExpLiteral(_) => true,
+        Expression::NewExpression(new_expr) => is_global_regexp(&new_expr.callee, ctx),
+        Expression::CallExpression(call_expr) => is_global_regexp(&call_expr.callee, ctx),
+        Expression::Identifier(ident) => {
+            let Some(declaration) = get_declaration_of_variable(ident, ctx) else {
+                return false;
+            };
+            let AstKind::VariableDeclarator(declarator) = declaration.kind() else {
+                return false;
+            };
+            matches!(ctx.nodes().parent_kind(declaration.id()), AstKind::VariableDeclaration(declaration) if declaration.kind.is_const())
+                && declarator.init.as_ref().is_some_and(|init| {
+                    !matches!(init.get_inner_expression(), Expression::Identifier(_))
+                        && is_known_regexp(init, ctx)
+                })
+        }
+        _ => false,
+    }
+}
+
+fn is_global_regexp<'a>(callee: &Expression<'a>, ctx: &LintContext<'a>) -> bool {
+    matches!(callee, Expression::Identifier(ident)
+        if ident.name == "RegExp" && ctx.is_reference_to_global_variable(ident))
 }
 
 #[test]
@@ -346,6 +390,15 @@ fn test() {
         ("const value = (s.match(/x/) || a) ? 1 : 2;", "const value = (/x/.test(s) || a) ? 1 : 2;"),
         ("const value = Boolean(a && s.match(/x/));", "const value = Boolean(a && /x/.test(s));"),
         ("const value = !(a || /x/.exec(s));", "const value = !(a || /x/.test(s));"),
+        // Reported, never rewritten: nothing says these are RegExps.
+        ("if (foo.match(unknown)) {}", "if (foo.match(unknown)) {}"),
+        (
+            "const ok = (action) => isLoaded.match(action) ? 1 : 2;",
+            "const ok = (action) => isLoaded.match(action) ? 1 : 2;",
+        ),
+        ("if (childProcess.exec(cmd)) {}", "if (childProcess.exec(cmd)) {}"),
+        ("let re = /a/; if (foo.match(re)) {}", "let re = /a/; if (foo.match(re)) {}"),
+        (r#"if (foo.match(new RegExp("a"))) {}"#, r#"if (new RegExp("a").test(foo)) {}"#),
     ];
 
     Tester::new(PreferRegexpTest::NAME, PreferRegexpTest::PLUGIN, pass, fail)
