@@ -7,7 +7,10 @@ use crate::{
     ast_nodes::{AstNode, AstNodes},
     embed_context::is_html_placeholder,
     formatter::{JsFormatter, JsFormatterExt as _},
-    print::{BinaryLikeOperator, should_flatten, unary_argument_takes_comment_parens},
+    print::{
+        BinaryLikeOperator, object_prints_double_brace, should_flatten,
+        unary_argument_takes_comment_parens,
+    },
     utils::{expression::ExpressionLeftSide, typecast::is_cast_target},
 };
 
@@ -74,9 +77,9 @@ impl NeedsParentheses<'_> for AstNode<'_, '_, IdentifierReference<'_>> {
         if f.comments().is_marked_as_type_cast_node(self) {
             return false;
         }
-        // An html-in-js placeholder (reaching JS through HTML's `<script>` or `on*` attributes)
+        // An html-in-js placeholder (reaching JS through HTML's `<script>` or Angular's bindings, a dispatch deep)
         // stands in for an expression of any precedence: the parens around it in the source stay
-        if is_html_placeholder(self.name.as_str()) {
+        if f.session().dispatch_depth() > 0 && is_html_placeholder(self.name.as_str()) {
             return is_parenthesized_in_source(self, f);
         }
 
@@ -90,7 +93,7 @@ impl NeedsParentheses<'_> for AstNode<'_, '_, IdentifierReference<'_>> {
             }
 
             // Needs at least one `satisfies`/`as` wrapper, with a statement right outside it
-            !ptr::eq(self.parent(), parent) && matches!(parent, AstNodes::ExpressionStatement(_))
+            !ptr::eq(self.parent(), parent) && starts_statement(parent, f)
         };
 
         match self.name.as_str() {
@@ -115,7 +118,7 @@ impl NeedsParentheses<'_> for AstNode<'_, '_, IdentifierReference<'_>> {
                 );
 
                 match leftmost_container(self.span, self.parent(), f) {
-                    Some((AstNodes::ExpressionStatement(_), _)) => is_computed_member_object,
+                    Some((node, _)) if starts_statement(node, f) => is_computed_member_object,
                     Some((AstNodes::ForStatement(s), child_span)) => {
                         is_computed_member_object
                             && matches!(&s.init, Some(init) if init.span() == child_span)
@@ -321,6 +324,8 @@ impl NeedsParentheses<'_> for AstNode<'_, '_, ObjectExpression<'_>> {
                 FirstInStatementMode::ExpressionStatementOrArrow,
                 f,
             )
+            // An embedded expression's rule: its host ends the code at the first `}}` (`ExpressionRoot::ends_at_double_brace`)
+            || object_prints_double_brace(self.span, parent, f)
     }
 }
 
@@ -617,6 +622,11 @@ impl NeedsParentheses<'_> for AstNode<'_, '_, AssignmentExpression<'_>> {
             AstNodes::ExpressionStatement(_) => {
                 matches!(self.left, AssignmentTarget::ObjectAssignmentTarget(_))
             }
+            // An embedded expression's root too, where it starts one (`starts_statement`)
+            parent if f.context().is_embedded_root(parent) => {
+                starts_statement(parent, f)
+                    && matches!(self.left, AssignmentTarget::ObjectAssignmentTarget(_))
+            }
             // Concise arrow bodies always need parens,
             // otherwise the `{` of an object pattern would parse as a block body
             // and a bare `=` reads as the arrow's own body:
@@ -686,8 +696,10 @@ impl NeedsParentheses<'_> for AstNode<'_, '_, SequenceExpression<'_>> {
         }
 
         match self.parent() {
+            // These print the parentheses themselves
             AstNodes::ReturnStatement(_)
             | AstNodes::ThrowStatement(_)
+            | AstNodes::YieldExpression(_)
             | AstNodes::ArrowFunctionExpression(_)
             // There's a precedence for writing `x++, y++`
             | AstNodes::ForStatement(_) => false,
@@ -967,9 +979,12 @@ impl NeedsParentheses<'_> for AstNode<'_, '_, TSInstantiationExpression<'_>> {
             AstNodes::TSNonNullExpression(_) | AstNodes::TSInstantiationExpression(_) => {
                 return true;
             }
-            AstNodes::CallExpression(expr) if expr.type_arguments.is_some() => &expr.callee,
-            AstNodes::NewExpression(expr) if expr.type_arguments.is_some() => &expr.callee,
-            AstNodes::TaggedTemplateExpression(expr) if expr.type_arguments.is_some() => &expr.tag,
+            // `(f<T>)()`, `new (f<T>)()`, `` (f<T>)`` `` and `extends (f<T>)`,
+            // since `f<T>()` and the others take `<T>` as their own type arguments
+            AstNodes::CallExpression(expr) => &expr.callee,
+            AstNodes::NewExpression(expr) => &expr.callee,
+            AstNodes::TaggedTemplateExpression(expr) => &expr.tag,
+            parent if is_class_extends(self.span, parent) => return true,
             _ => return is_followed_by_comparison_or_sign(self, f),
         };
 
@@ -1161,12 +1176,25 @@ fn is_first_in_statement(
     f: &JsFormatter<'_, '_>,
 ) -> bool {
     match leftmost_container(span, parent, f) {
-        Some((AstNodes::ExpressionStatement(_), _)) => true,
+        Some((node, _)) if starts_statement(node, f) => true,
         Some((AstNodes::ArrowFunctionExpression(_), _)) => {
             mode == FirstInStatementMode::ExpressionStatementOrArrow
         }
         Some((AstNodes::ExportDefaultDeclaration(_), _)) => {
             mode == FirstInStatementMode::ExpressionOrExportDefault
+        }
+        _ => false,
+    }
+}
+
+/// `node` is a statement an expression it holds starts: an expression statement,
+/// or an embedded expression's root the host reads as statements ([`crate::ExpressionRoot::reads_as_statements`]).
+fn starts_statement(node: &AstNodes<'_, '_>, f: &JsFormatter<'_, '_>) -> bool {
+    match node {
+        AstNodes::ExpressionStatement(_) => true,
+        // An embedded expression's root, where it starts a statement
+        node if f.context().is_embedded_root(node) => {
+            f.context().expression_root().is_some_and(|root| root.reads_as_statements)
         }
         _ => false,
     }

@@ -6,7 +6,6 @@ use std::{
 };
 
 use rustc_hash::FxHashMap;
-use smallvec::SmallVec;
 
 use oxc_allocator::{Address, ArenaVec};
 use oxc_ast::{AstKind, ast::*};
@@ -30,12 +29,12 @@ use oxc_syntax::{
 use crate::{
     Semantic,
     binder::{Binder, ModuleInstanceState},
-    checker,
+    checker::{self, is_function_decl_part_of_if_statement},
     class::ClassTableBuilder,
     diagnostics::redeclaration,
     label::UnusedLabels,
     node::{Ancestry, AstNodeStore, AstNodeStoreKind},
-    scoping::{Bindings, Scoping},
+    scoping::Scoping,
     stats::Stats,
     unresolved_stack::{UnresolvedReference, UnresolvedReferences},
 };
@@ -92,6 +91,11 @@ pub struct SemanticBuilder<'a> {
     /// declarations in that scope can still detect redeclarations via `check_redeclaration`.
     /// A single flat map avoids allocating a per-scope inner map for every hoisting scope.
     pub(crate) hoisting_variables: FxHashMap<(ScopeId, Ident<'a>), SymbolId>,
+    /// Scope of the innermost catch clause body being visited, if any. It stays set while
+    /// visiting blocks and functions nested in that body; only declarations whose scope equals
+    /// it (i.e. directly in the catch body) are checked against the catch parameters, which are
+    /// bound in the parent catch clause scope. See `check_catch_parameter_redeclaration`.
+    catch_body_scope_id: Option<ScopeId>,
 
     // builders
     /// Node-id counter, current-node cursor/flags, and the node storage (full
@@ -158,6 +162,7 @@ impl<'a> SemanticBuilder<'a> {
             module_instance_state_cache: FxHashMap::default(),
             node_store: AstNodeStore::default(),
             hoisting_variables: FxHashMap::default(),
+            catch_body_scope_id: None,
             scoping,
             unresolved_references: UnresolvedReferences::new(),
             unused_labels: UnusedLabels::default(),
@@ -336,7 +341,9 @@ impl<'a> SemanticBuilder<'a> {
             (stats_with_excess, Some(stats))
         };
         self.node_store.reserve(stats.nodes as usize);
-        self.scoping.reserve(
+        // `self.scoping` is still empty at this point. Replace it with one which has capacity for
+        // everything we're about to add, including an arena of appropriate size.
+        self.scoping = Scoping::with_capacity(
             stats.symbols as usize,
             stats.references as usize,
             stats.scopes as usize,
@@ -427,6 +434,14 @@ impl<'a> SemanticBuilder<'a> {
         if is_ambient {
             debug_assert!(self.ambient_depth > 0);
             self.ambient_depth -= 1;
+        }
+    }
+
+    fn reference_label(&mut self, label: &LabelIdentifier<'a>) {
+        let label_id = self.unused_labels.reference(label.name);
+        label.label_id.set(label_id);
+        if label_id.is_none() {
+            self.scoping.set_has_unresolved_labels();
         }
     }
 
@@ -544,7 +559,22 @@ impl<'a> SemanticBuilder<'a> {
         includes: SymbolFlags,
         excludes: SymbolFlags,
     ) -> SymbolId {
-        if let Some(symbol_id) = self.check_redeclaration(scope_id, span, name, excludes) {
+        let is_catch_body = self.catch_body_scope_id == Some(scope_id);
+        let errors_before = if is_catch_body { self.errors.borrow().len() } else { 0 };
+        let redeclared_symbol_id = self.check_redeclaration(scope_id, span, name, excludes);
+        // Report one error per declaration: skip the catch parameter check when this declaration
+        // already clashed with something else, e.g. a `var` hoisted through the catch body
+        // (`catch (e) { var e; let e }`).
+        if is_catch_body && self.errors.borrow().len() == errors_before {
+            self.check_catch_parameter_redeclaration(scope_id, span, name, includes);
+        }
+
+        // A `var` hoisted through this scope is bound in an outer scope. Interfaces and type aliases
+        // live in a separate declaration space, so they get their own symbol in this scope.
+        if let Some(symbol_id) = redeclared_symbol_id
+            && (includes.intersects(SymbolFlags::Value)
+                || self.scoping.scope_has_binding(scope_id, name))
+        {
             self.add_redeclare_variable(symbol_id, includes, span);
             self.scoping.union_symbol_flag(symbol_id, includes);
             return symbol_id;
@@ -558,6 +588,42 @@ impl<'a> SemanticBuilder<'a> {
             scope_id,
             self.node_store.current_node_id,
         )
+    }
+
+    /// It is a Syntax Error if any element of the BoundNames of CatchParameter also occurs in the
+    /// LexicallyDeclaredNames of Block. Annex B.3.4 relaxes this only for `var` declarations,
+    /// which are never declared on the catch body scope.
+    /// <https://tc39.es/ecma262/#sec-try-statement-static-semantics-early-errors>
+    ///
+    /// Catch parameters are bound in the catch clause scope, the parent of the catch body scope.
+    fn check_catch_parameter_redeclaration(
+        &self,
+        catch_body_scope_id: ScopeId,
+        span: Span,
+        name: Ident<'a>,
+        includes: SymbolFlags,
+    ) {
+        // Type-only declarations (`interface e {}`) do not conflict with the catch parameter.
+        if !includes.intersects(SymbolFlags::Value) {
+            return;
+        }
+        // Annex B.3.3: `if (x) function e() {}` behaves as if the function were in its own block,
+        // so it is not one of the LexicallyDeclaredNames of the catch block. The function is the
+        // current node while it is bound. Annex B is JavaScript-only, as in `Function::bind`.
+        if !self.source_type.is_typescript()
+            && let AstKind::Function(func) = self.ancestry().current_kind()
+            && func.is_declaration()
+            && is_function_decl_part_of_if_statement(func, self)
+        {
+            return;
+        }
+        let Some(catch_scope_id) = self.scoping.scope_parent_id(catch_body_scope_id) else {
+            return;
+        };
+        if let Some(symbol_id) = self.scoping.get_binding(catch_scope_id, name) {
+            let symbol_span = self.scoping.symbol_span(symbol_id);
+            self.error(redeclaration(&name, symbol_span, span));
+        }
     }
 
     /// Declare a new symbol on the current scope.
@@ -580,25 +646,48 @@ impl<'a> SemanticBuilder<'a> {
         name: Ident<'a>,
         excludes: SymbolFlags,
     ) -> Option<SymbolId> {
-        let symbol_id = self
-            .scoping
-            .get_binding(scope_id, name)
-            .or_else(|| self.hoisting_variables.get(&(scope_id, name)).copied())?;
+        let binding_id = self.scoping.get_binding(scope_id, name);
+        self.check_redeclaration_with_binding(scope_id, binding_id, span, name, excludes)
+    }
 
-        let flags = self.scoping.symbol_flags(symbol_id);
+    /// Check a local binding that has already been looked up, including conflicts with hoisted vars.
+    pub(crate) fn check_redeclaration_with_binding(
+        &self,
+        scope_id: ScopeId,
+        binding_id: Option<SymbolId>,
+        span: Span,
+        name: Ident<'a>,
+        excludes: SymbolFlags,
+    ) -> Option<SymbolId> {
+        if let Some(symbol_id) = binding_id {
+            let flags = self.scoping.symbol_flags(symbol_id);
 
-        // A named function expression binds its own name in the function's scope, so a same-named
-        // parameter is not a redeclaration: `(function n(n) {})` - param `n` is fine.
-        if flags.contains(SymbolFlags::FunctionExpression) {
-            return None;
+            // A named function expression binds its own name in the function's scope, so a same-named
+            // parameter is not a redeclaration: `(function n(n) {})` - param `n` is fine.
+            if flags.contains(SymbolFlags::FunctionExpression) {
+                return None;
+            }
+
+            if flags.intersects(excludes) {
+                let symbol_span = self.scoping.symbol_span(symbol_id);
+                self.error(redeclaration(&name, symbol_span, span));
+                return Some(symbol_id);
+            }
         }
 
-        if flags.intersects(excludes) {
+        // A type-only binding in this scope must not hide a conflicting hoisted `var`:
+        // `{ var x; interface x {} let x; }`
+        // Only the value meaning conflicts. A type sharing the symbol belongs to the outer scope:
+        // `type x = 0; { var x; interface x {} }`
+        let hoisted_id = self.hoisting_variables.get(&(scope_id, name)).copied();
+        if let Some(symbol_id) = hoisted_id
+            && self.scoping.symbol_flags(symbol_id).intersects(excludes & SymbolFlags::Value)
+        {
             let symbol_span = self.scoping.symbol_span(symbol_id);
             self.error(redeclaration(&name, symbol_span, span));
         }
 
-        Some(symbol_id)
+        binding_id.or(hoisted_id)
     }
 
     /// Declare an unresolved reference in the current scope.
@@ -1018,7 +1107,7 @@ impl<'a> Visit<'a> for SemanticBuilder<'a> {
         let kind = AstKind::BreakStatement(self.alloc(stmt));
         self.enter_node(kind);
         if let Some(label) = &stmt.label {
-            self.unused_labels.reference(label.name);
+            self.reference_label(label);
         }
 
         /* cfg */
@@ -1088,33 +1177,16 @@ impl<'a> Visit<'a> for SemanticBuilder<'a> {
         let parent_scope_id = self.current_scope_id;
         self.enter_scope(ScopeFlags::empty(), &it.scope_id);
 
-        // Move all bindings from catch clause param scope to catch clause body scope
-        // to make it easier to resolve references and check redeclare errors
+        // A lexical declaration directly in a catch body must not reuse a catch parameter name.
+        // See `check_catch_parameter_redeclaration`.
+        let parent_catch_body_scope_id = self.catch_body_scope_id;
         if self.scoping.scope_flags(parent_scope_id).is_catch_clause() {
-            let parent_bindings = self.scoping.cell.with_dependent_mut(|allocator, cell| {
-                if cell.bindings[parent_scope_id].is_empty() {
-                    None
-                } else {
-                    let mut parent_bindings = Bindings::new_in(allocator);
-                    mem::swap(&mut cell.bindings[parent_scope_id], &mut parent_bindings);
-                    // Collect into a `SmallVec` so the common `catch (e)` (a single binding)
-                    // resolves inline without a heap allocation. The ids must be collected
-                    // here to escape the `with_dependent_mut` borrow before calling
-                    // `set_symbol_scope_id` below.
-                    let parent_symbol_ids =
-                        parent_bindings.values().copied().collect::<SmallVec<[SymbolId; 4]>>();
-                    cell.bindings[self.current_scope_id] = parent_bindings;
-                    Some(parent_symbol_ids)
-                }
-            });
-            if let Some(parent_bindings) = parent_bindings {
-                for symbol_id in parent_bindings {
-                    self.scoping.set_symbol_scope_id(symbol_id, self.current_scope_id);
-                }
-            }
+            self.catch_body_scope_id = Some(self.current_scope_id);
         }
 
         self.visit_statements(&it.body);
+
+        self.catch_body_scope_id = parent_catch_body_scope_id;
 
         self.leave_scope();
         self.leave_node(kind);
@@ -1124,7 +1196,7 @@ impl<'a> Visit<'a> for SemanticBuilder<'a> {
         let kind = AstKind::ContinueStatement(self.alloc(stmt));
         self.enter_node(kind);
         if let Some(label) = &stmt.label {
-            self.unused_labels.reference(label.name);
+            self.reference_label(label);
         }
 
         /* cfg */
@@ -1187,15 +1259,14 @@ impl<'a> Visit<'a> for SemanticBuilder<'a> {
             cfg.add_edge(before_do_while_stmt_graph_ix, start_body_graph_ix, EdgeType::Normal);
             // body of do-while to start of condition
             cfg.add_edge(after_body_graph_ix, start_of_condition_graph_ix, EdgeType::Normal);
-            // end of condition to after do while
-            cfg.add_edge(end_of_condition_graph_ix, end_do_while_graph_ix, EdgeType::Normal);
-            // end of condition to after start of body
-            cfg.add_edge(end_of_condition_graph_ix, start_body_graph_ix, EdgeType::Backedge);
-
             cfg.ctx(None)
                 .mark_break(end_do_while_graph_ix)
                 .mark_continue(start_of_condition_graph_ix)
                 .resolve_with_upper_label();
+            // end of condition to after do while
+            cfg.add_edge(end_of_condition_graph_ix, end_do_while_graph_ix, EdgeType::Normal);
+            // end of condition to after start of body
+            cfg.add_edge(end_of_condition_graph_ix, start_body_graph_ix, EdgeType::Backedge);
         });
         /* cfg */
 
@@ -1686,7 +1757,11 @@ impl<'a> Visit<'a> for SemanticBuilder<'a> {
         let kind = AstKind::LabeledStatement(self.alloc(stmt));
         self.enter_node(kind);
         control_flow!(self, |cfg| cfg.enter_statement(self.node_store.current_node_id));
-        self.unused_labels.add(stmt.label.name, self.node_store.current_node_id);
+        #[expect(clippy::cast_possible_truncation)]
+        let depth = self.unused_labels.stack.len() as u32;
+        let label_id = self.scoping.create_label(stmt.label.name, depth);
+        stmt.label.label_id.set(Some(label_id));
+        self.unused_labels.add(stmt.label.name, self.node_store.current_node_id, label_id);
 
         /* cfg */
         #[cfg(feature = "cfg")]
@@ -2202,6 +2277,18 @@ impl<'a> Visit<'a> for SemanticBuilder<'a> {
         self.leave_ambient_context(func.declare);
     }
 
+    fn visit_function_body(&mut self, body: &FunctionBody<'a>) {
+        let jump_boundary = self.unused_labels.enter_jump_boundary();
+        oxc_ast_visit::walk::walk_function_body(self, body);
+        self.unused_labels.leave_jump_boundary(jump_boundary);
+    }
+
+    fn visit_static_block(&mut self, block: &StaticBlock<'a>) {
+        let jump_boundary = self.unused_labels.enter_jump_boundary();
+        oxc_ast_visit::walk::walk_static_block(self, block);
+        self.unused_labels.leave_jump_boundary(jump_boundary);
+    }
+
     fn visit_arrow_function_expression(&mut self, expr: &ArrowFunctionExpression<'a>) {
         /* cfg */
         // We add a new basic block to the cfg before entering the node
@@ -2514,7 +2601,7 @@ impl<'a> Visit<'a> for SemanticBuilder<'a> {
     fn visit_ts_property_signature(&mut self, sig: &TSPropertySignature<'a>) {
         let kind = AstKind::TSPropertySignature(self.alloc(sig));
         self.enter_node(kind);
-        if sig.key.is_expression() {
+        if sig.key.is_computed() {
             // interface A { [prop]: string }
             //               ^^^^^ The property can reference value or [`SymbolFlags::TypeImport`] symbol
             self.current_reference_flags = ReferenceFlags::ValueAsType;
@@ -2532,7 +2619,7 @@ impl<'a> Visit<'a> for SemanticBuilder<'a> {
         let kind = AstKind::TSMethodSignature(self.alloc(sig));
         self.enter_node(kind);
         self.visit_span(&sig.span);
-        if sig.computed {
+        if sig.key.is_computed() {
             // interface A { [prop](): string }
             //                ^^^^ The property can reference value or [`SymbolFlags::TypeImport`] symbol
             self.current_reference_flags = ReferenceFlags::ValueAsType;
@@ -2559,7 +2646,7 @@ impl<'a> Visit<'a> for SemanticBuilder<'a> {
         self.enter_node(kind);
         self.visit_span(&method.span);
         self.visit_decorators(&method.decorators);
-        if method.computed && (method.r#type.is_abstract() || self.in_ambient_context()) {
+        if method.key.is_computed() && (method.r#type.is_abstract() || self.in_ambient_context()) {
             // declare class A { [prop](): string }
             //                    ^^^^  The property can reference value or [`SymbolFlags::TypeImport`] symbol
             self.current_reference_flags = ReferenceFlags::ValueAsType;
@@ -2576,7 +2663,7 @@ impl<'a> Visit<'a> for SemanticBuilder<'a> {
         self.visit_span(&prop.span);
         self.visit_decorators(&prop.decorators);
         self.enter_ambient_context(prop.declare);
-        if prop.computed && (prop.r#type.is_abstract() || self.in_ambient_context()) {
+        if prop.key.is_computed() && (prop.r#type.is_abstract() || self.in_ambient_context()) {
             // class A { declare [prop]: string }
             //                   ^^^^^ The property can reference value or [`SymbolFlags::TypeImport`] symbol
             self.current_reference_flags = ReferenceFlags::ValueAsType;
@@ -2834,7 +2921,8 @@ impl<'a> Visit<'a> for SemanticBuilder<'a> {
         self.visit_ts_enum_body(&decl.body);
         // Evaluate enum member values after all members are bound
         if self.enum_eval {
-            crate::ts_enum::eval::evaluate_enum_members(decl, &mut self.scoping);
+            let is_ambient = self.in_ambient_context();
+            crate::ts_enum::eval::evaluate_enum_members(decl, is_ambient, &mut self.scoping);
         }
         self.leave_node(kind);
         self.leave_ambient_context(decl.declare);

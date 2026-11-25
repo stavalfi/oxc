@@ -8,11 +8,16 @@ mod babel;
 mod test262;
 mod typescript;
 
+mod full_eq;
 mod tools;
+mod unambiguous_diff;
 
-// Gated by `lexer` Cargo feature, because `oxc_lexer` is still incubating.
-// `oxc_lexer` only supports little endian at present.
-#[cfg(all(feature = "lexer", target_endian = "little"))]
+mod generated {
+    mod derive_full_eq;
+}
+
+// `oxc_lexer` only supports little endian at present
+#[cfg(target_endian = "little")]
 mod lexer_diff;
 
 use std::{
@@ -328,6 +333,10 @@ impl AppArgs {
 
     fn run_conformance_suites(&self, data: &TestData) {
         self.run_parser(data);
+        self.run_unambiguous(data);
+        // `oxc_lexer` only supports little endian at present
+        #[cfg(target_endian = "little")]
+        self.run_lexer(data);
         self.run_semantic(data);
         self.run_codegen(data);
         self.run_formatter(data);
@@ -367,22 +376,48 @@ impl AppArgs {
         }
     }
 
+    /// Differential unambiguous parsing conformance.
+    ///
+    /// Parse each fixture as unambiguous, and again as the module or script it resolved to.
+    /// Both parses must produce the same AST, trivia, tokens, diagnostics and module record.
+    pub fn run_unambiguous(&self, data: &TestData) {
+        self.run_tool(
+            "parser_unambiguous_test262",
+            TEST262_PATH,
+            &data.test262,
+            unambiguous_diff::run_unambiguous_test262,
+        );
+        self.run_tool(
+            "parser_unambiguous_babel",
+            BABEL_PATH,
+            &data.babel,
+            unambiguous_diff::run_unambiguous_babel,
+        );
+        self.run_tool(
+            "parser_unambiguous_typescript",
+            TYPESCRIPT_PATH,
+            &data.typescript,
+            unambiguous_diff::run_unambiguous_typescript,
+        );
+        self.run_tool(
+            "parser_unambiguous_misc",
+            MISC_PATH,
+            &data.misc,
+            unambiguous_diff::run_unambiguous_misc,
+        );
+    }
+
     /// Differential lexer conformance.
     ///
     /// Compare `oxc_lexer`'s token spans and comments against the parser's over the corpora.
-    /// Opt-in (kept out of `run_all`) — requires `lexer` Cargo feature.
-    /// Runs against whichever of the lexer's implementations the build selects (see `oxc_lexer::IMPLEMENTATION`).
+    /// Lexes each fixture with every CPU feature set the CPU supports, and checks their outputs match.
     /// `oxc_lexer` only supports little endian at present.
     ///
     /// # Panics
-    /// Panics if `lexer` Cargo feature is not enabled, or on a big endian machine.
+    /// Panics on a big endian machine.
     pub fn run_lexer(&self, data: &TestData) {
-        #[cfg(all(feature = "lexer", target_endian = "little"))]
+        #[cfg(target_endian = "little")]
         {
-            // Report which implementation was built.
-            // CI checks this line to make sure the build it expected is the build it got.
-            println!("Lexer implementation: {}", oxc_lexer::IMPLEMENTATION);
-
             self.run_tool(
                 "lexer_test262",
                 TEST262_PATH,
@@ -399,10 +434,10 @@ impl AppArgs {
             self.run_tool("lexer_misc", MISC_PATH, &data.misc, lexer_diff::run_lexer_misc);
         }
 
-        #[cfg(not(all(feature = "lexer", target_endian = "little")))]
+        #[cfg(not(target_endian = "little"))]
         {
             let _ = (self, data);
-            panic!("`lexer` conformance requires `lexer` Cargo feature and a little-endian system");
+            panic!("`lexer` conformance requires a little-endian system");
         }
     }
 

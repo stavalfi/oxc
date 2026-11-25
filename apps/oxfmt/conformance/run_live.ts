@@ -1,92 +1,120 @@
-// oxlint-disable no-console, no-await-in-loop
+// oxlint-disable no-console
 
 import { createTwoFilesPatch } from "diff";
-import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { join, relative } from "node:path";
-import prettier from "prettier";
-import * as astroPlugin from "prettier-plugin-astro";
-import * as sveltePlugin from "prettier-plugin-svelte";
-import { format } from "../dist/index.js";
-import { assertDownloaded, sources } from "./download-fixtures.ts";
+import Tinypool from "tinypool";
+import { assertDownloaded, sources } from "./download-externals.ts";
+import type run from "./live_worker.ts";
+import type { LiveTask } from "./live_worker.ts";
 import {
   collectDivergences,
   type Divergence,
   divergencesOf,
   listDivergences,
-  FIXTURES_DIR,
+  EXTERNALS_DIR,
+  CONFORMANCE_DIR,
   SNAPSHOTS_DIR,
   checkStaleDivergences,
 } from "./shared.ts";
 
-const EXTERNALS_DIR = join(FIXTURES_DIR, "externals");
-
 type Category = {
   name: string;
-  /** Test suites (the plugins', `edge-cases/`): compared as written. */
-  fixtures: Source[];
+  /** Test suites (the plugins'): compared as written. */
+  suites?: Source[];
   /** Real-world projects: compared on Prettier's output of the file, as written when it has no stable one. */
-  projects: Source[];
+  projects?: Source[];
   optionSets: Record<string, unknown>[];
 };
 
 type Source = {
   dir: string;
-  ext?: string;
+  ext: string;
   /** Path substrings to skip (e.g. deliberately broken inputs) */
   excludes?: string[];
   /** Transform relative path to a filepath for formatting (e.g. "xxx/input.html" → "xxx.svelte") */
   resolveFilePath?: (name: string) => string;
 };
 
+/** An Angular template's name oxfmt reads as one (`app.html` as `app.component.html`) */
+const asComponentTemplate = (name: string) =>
+  name.endsWith(".component.html") ? name : name.replace(/\.html$/, ".component.html");
+
 const categories: Category[] = [
   {
     name: "js-in-vue",
-    fixtures: [{ dir: join(FIXTURES_DIR, "edge-cases", "js-in-vue") }],
     projects: [{ dir: join(EXTERNALS_DIR, "vue-vben-admin"), ext: ".vue" }],
     optionSets: [
       { printWidth: 80 },
-      { printWidth: 100, vueIndentScriptAndStyle: true, singleQuote: true },
+      { printWidth: 100, vueIndentScriptAndStyle: true, singleQuote: true, semi: false },
     ],
   },
   {
-    name: "gql-in-js",
-    fixtures: [{ dir: join(FIXTURES_DIR, "edge-cases", "gql-in-js") }],
-    projects: [],
-    optionSets: [{ printWidth: 80 }, { printWidth: 100 }],
-  },
-  {
-    name: "css-in-js",
-    fixtures: [{ dir: join(FIXTURES_DIR, "edge-cases", "css-in-js") }],
-    projects: [],
-    optionSets: [{ printWidth: 80 }, { printWidth: 100 }],
-  },
-  {
     name: "html-in-js",
-    fixtures: [{ dir: join(FIXTURES_DIR, "edge-cases", "html-in-js") }],
     projects: [{ dir: join(EXTERNALS_DIR, "webawesome"), ext: ".ts" }],
     optionSets: [{ printWidth: 80 }, { printWidth: 100, htmlWhitespaceSensitivity: "ignore" }],
   },
   {
+    // Components with an inline template (`@Component({ template: `…` })`)
     name: "angular-in-js",
-    fixtures: [{ dir: join(FIXTURES_DIR, "edge-cases", "angular-in-js") }],
-    projects: [],
+    projects: [{ dir: join(EXTERNALS_DIR, "ng-zorro-antd"), ext: ".component.ts" }],
     optionSets: [{ printWidth: 80 }, { printWidth: 100, htmlWhitespaceSensitivity: "ignore" }],
   },
   {
-    name: "md-in-js",
-    fixtures: [{ dir: join(FIXTURES_DIR, "edge-cases", "md-in-js") }],
-    projects: [],
-    optionSets: [{ printWidth: 80 }, { printWidth: 100, proseWrap: "always" }],
-  },
-  {
-    name: "xxx-in-js-comment",
-    fixtures: [{ dir: join(FIXTURES_DIR, "edge-cases", "xxx-in-js-comment") }],
-    projects: [],
-    optionSets: [{ printWidth: 80 }, { printWidth: 100 }],
+    // Templates in their own file, a `.html` without `.component` too (Angular's style guide since v20).
+    // Areas of different authors and syntax (`@if` and `*ngIf`), but no pages (`index.html`) or sets of near-identical demos
+    name: "angular",
+    projects: [
+      {
+        dir: join(EXTERNALS_DIR, "angular-adev"),
+        ext: ".html",
+        excludes: ["index.html", "examples/aria/", "examples/drag-drop/"],
+        resolveFilePath: asComponentTemplate,
+      },
+      {
+        dir: join(EXTERNALS_DIR, "angular-devtools"),
+        ext: ".html",
+        excludes: ["index.html", "/devtools.html"],
+        resolveFilePath: asComponentTemplate,
+      },
+      {
+        dir: join(EXTERNALS_DIR, "angular-components", "material"),
+        ext: ".html",
+        resolveFilePath: asComponentTemplate,
+      },
+      {
+        dir: join(EXTERNALS_DIR, "angular-components", "dev-app"),
+        ext: ".html",
+        excludes: ["index.html"],
+        resolveFilePath: asComponentTemplate,
+      },
+      {
+        dir: join(EXTERNALS_DIR, "bitwarden-components"),
+        ext: ".html",
+        excludes: ["index.html"],
+        resolveFilePath: asComponentTemplate,
+      },
+      {
+        dir: join(EXTERNALS_DIR, "bitwarden-angular"),
+        ext: ".html",
+        resolveFilePath: asComponentTemplate,
+      },
+      {
+        dir: join(EXTERNALS_DIR, "bitwarden-web"),
+        ext: ".html",
+        resolveFilePath: asComponentTemplate,
+      },
+      {
+        dir: join(EXTERNALS_DIR, "bitwarden-license-web"),
+        ext: ".html",
+        resolveFilePath: asComponentTemplate,
+      },
+    ],
+    optionSets: [{ printWidth: 80 }, { printWidth: 100, htmlWhitespaceSensitivity: "ignore" }],
   },
   {
     name: "svelte",
-    fixtures: [
+    suites: [
       {
         dir: join(EXTERNALS_DIR, "plugin-svelte"),
         ext: "input.html",
@@ -94,7 +122,6 @@ const categories: Category[] = [
         resolveFilePath: (name) => name.replace("/input.html", ".svelte"),
       },
     ],
-    projects: [],
     optionSets: [
       { printWidth: 80, svelte: {} },
       {
@@ -115,11 +142,7 @@ const categories: Category[] = [
   },
   {
     name: "astro",
-    fixtures: [
-      { dir: join(EXTERNALS_DIR, "plugin-astro"), ext: "input.astro" },
-      { dir: join(FIXTURES_DIR, "edge-cases", "astro") },
-    ],
-    projects: [],
+    suites: [{ dir: join(EXTERNALS_DIR, "plugin-astro"), ext: "input.astro" }],
     optionSets: [
       { printWidth: 80, astro: {} },
       {
@@ -135,15 +158,8 @@ const categories: Category[] = [
     ],
   },
   {
-    name: "xxx-in-md",
-    fixtures: [{ dir: join(FIXTURES_DIR, "edge-cases", "xxx-in-md") }],
-    projects: [],
-    optionSets: [{ printWidth: 80 }, { printWidth: 100, proseWrap: "always" }],
-  },
-  {
     // Real-world documents, dense with fenced code (css / html / js)
     name: "markdown-mdn",
-    fixtures: [],
     projects: [
       { dir: join(EXTERNALS_DIR, "mdn-learn"), ext: ".md" },
       { dir: join(EXTERNALS_DIR, "mdn-css-guides"), ext: ".md" },
@@ -155,7 +171,6 @@ const categories: Category[] = [
   },
   {
     name: "html",
-    fixtures: [{ dir: join(FIXTURES_DIR, "edge-cases", "html") }],
     // Real-world pages: demos and playgrounds, dense with `<script>` / `<style>`
     projects: [
       // vite's `invalid*.html` are deliberately broken, both sides error
@@ -171,19 +186,16 @@ const categories: Category[] = [
   },
   {
     name: "graphql",
-    fixtures: [],
     projects: [{ dir: join(EXTERNALS_DIR, "gitlab"), ext: ".graphql" }],
     optionSets: [{ printWidth: 80 }, { printWidth: 100 }],
   },
   {
     name: "less",
-    fixtures: [],
     projects: [{ dir: join(EXTERNALS_DIR, "ng-zorro-antd"), ext: ".less" }],
     optionSets: [{ printWidth: 80 }, { printWidth: 100 }],
   },
   {
     name: "css",
-    fixtures: [],
     projects: [
       { dir: join(EXTERNALS_DIR, "mantine"), ext: ".css" },
       { dir: join(EXTERNALS_DIR, "docusaurus"), ext: ".css" },
@@ -192,7 +204,6 @@ const categories: Category[] = [
   },
   {
     name: "yaml",
-    fixtures: [],
     projects: [
       { dir: join(EXTERNALS_DIR, "aws-cloudformation-templates"), ext: ".yaml" },
       { dir: join(EXTERNALS_DIR, "aws-cloudformation-templates"), ext: ".yml" },
@@ -207,7 +218,6 @@ const categories: Category[] = [
   },
   {
     name: "scss",
-    fixtures: [],
     projects: [
       { dir: join(EXTERNALS_DIR, "vue-vben-admin"), ext: ".scss" },
       { dir: join(EXTERNALS_DIR, "gitlab"), ext: ".scss" },
@@ -216,7 +226,6 @@ const categories: Category[] = [
   },
   {
     name: "jsdoc",
-    fixtures: [],
     projects: [{ dir: join(EXTERNALS_DIR, "svelte"), ext: ".js" }],
     optionSets: [{ printWidth: 100 }],
   },
@@ -226,26 +235,20 @@ const categories: Category[] = [
 
 assertDownloaded(sources.map(({ name }) => name).filter((name) => name !== "prettier"));
 const divergences = collectDivergences();
-const results: CategoryResult[] = [];
+// Every comparison is one task, all categories at once, so a slow file never idles the other workers
+const pool = new Tinypool({ filename: new URL("./live_worker.ts", import.meta.url).href });
+const progress = { done: 0, total: 0 };
+const results = await Promise.all(categories.map(runCategory));
+await pool.destroy();
+if (process.stdout.isTTY) process.stdout.write("\n");
 
-for (const category of categories) {
-  const fixtures = [
-    ...collectFixtures(category.fixtures ?? [], false),
-    ...collectFixtures(category.projects ?? [], true),
-  ].sort((a, b) => a.name.localeCompare(b.name));
-
-  if (fixtures.length === 0) {
-    console.log(`[${category.name}] No fixtures found, skipping.`);
-    continue;
-  }
-
-  console.log(`[${category.name}] Running ${fixtures.length} fixtures...`);
-  const categoryResult = await runCategory(category, fixtures);
-  results.push(categoryResult);
-
-  for (const r of categoryResult.optionSetResults) {
+for (const { name, optionSetResults } of results) {
+  console.log(`[${name}] Ran ${optionSetResults[0].total} fixtures`);
+  for (const r of optionSetResults) {
     const pct = ((r.passed / r.total) * 100).toFixed(2);
-    console.log(`  ${JSON.stringify(r.options)}: ${r.passed}/${r.total} (${pct}%)`);
+    const nonIdempotent =
+      r.nonIdempotent.length > 0 ? `, ${r.nonIdempotent.length} not idempotent` : "";
+    console.log(`  ${JSON.stringify(r.options)}: ${r.passed}/${r.total} (${pct}%)${nonIdempotent}`);
   }
 }
 
@@ -278,6 +281,8 @@ type OptionSetResult = {
   passed: number;
   total: number;
   failures: Failure[];
+  /** The projects' files oxfmt formats as written to no fixpoint, `true` where the second pass errored */
+  nonIdempotent: [name: string, errored: boolean][];
 };
 
 type CategoryResult = {
@@ -289,17 +294,15 @@ function collectFixtures(sources: Source[], isProject: boolean): Fixture[] {
   const results: Fixture[] = [];
 
   for (const source of sources) {
-    if (!existsSync(source.dir)) continue;
-
     for (const entry of readdirSync(source.dir, {
       withFileTypes: true,
       recursive: true,
     })) {
       if (!entry.isFile()) continue;
-      if (source.ext && !entry.name.endsWith(source.ext)) continue;
+      if (!entry.name.endsWith(source.ext)) continue;
 
       const fullPath = join(entry.parentPath, entry.name);
-      const relPath = relative(FIXTURES_DIR, fullPath);
+      const relPath = relative(CONFORMANCE_DIR, fullPath);
       if (source.excludes?.some((s) => relPath.includes(s))) continue;
 
       const name = source.resolveFilePath?.(relPath) ?? relPath;
@@ -310,71 +313,43 @@ function collectFixtures(sources: Source[], isProject: boolean): Fixture[] {
   return results;
 }
 
-async function runCategory(category: Category, fixtures: Fixture[]): Promise<CategoryResult> {
-  const optionSetResults: OptionSetResult[] = [];
+async function runCategory(category: Category): Promise<CategoryResult> {
+  const fixtures = [
+    ...collectFixtures(category.suites ?? [], false),
+    ...collectFixtures(category.projects ?? [], true),
+  ].sort((a, b) => a.name.localeCompare(b.name));
 
-  for (const options of category.optionSets) {
-    let passed = 0;
-    const failures: Failure[] = [];
-
-    for (const fixture of fixtures) {
-      let input = readFileSync(fixture.fullPath, "utf8");
-      let expected = await formatWithPrettier(fixture.name, input, options);
-      // A project hands over Prettier's output, unless Prettier cannot read it back either
-      if (fixture.isProject && expected !== null) {
-        const again = await formatWithPrettier(fixture.name, expected, options);
-        if (again !== null) [input, expected] = [expected, again];
-      }
-      const prettierResult = expected ?? "ERROR";
-      const oxfmtResult = await formatWithOxfmt(fixture.name, input, options);
-
-      // Both failing to parse is not a pass, the fixture exercised nothing
-      if (oxfmtResult === prettierResult && oxfmtResult !== "ERROR") {
-        passed++;
-      } else {
-        failures.push({
-          name: fixture.name,
-          oxfmt: oxfmtResult,
-          prettier: prettierResult,
-        });
-      }
-    }
-
-    optionSetResults.push({
-      options,
-      passed,
-      total: fixtures.length,
-      failures,
-    });
-  }
+  const optionSetResults = await Promise.all(
+    category.optionSets.map(async (options): Promise<OptionSetResult> => {
+      // `Promise.all` keeps the fixture order, so the report stays deterministic
+      const outcomes = await Promise.all(
+        fixtures.map((fixture) => runTask({ ...fixture, options })),
+      );
+      const failures = outcomes.flatMap(({ failure }) => (failure === null ? [] : [failure]));
+      const nonIdempotent = outcomes.flatMap(({ nonIdempotent }, i): [string, boolean][] =>
+        nonIdempotent === null ? [] : [[fixtures[i].name, nonIdempotent]],
+      );
+      return {
+        options,
+        passed: fixtures.length - failures.length,
+        total: fixtures.length,
+        failures,
+        nonIdempotent,
+      };
+    }),
+  );
 
   return { name: category.name, optionSetResults };
 }
 
-/** `null` when Prettier fails. */
-async function formatWithPrettier(
-  fileName: string,
-  content: string,
-  options: Record<string, unknown>,
-): Promise<string | null> {
-  try {
-    return await prettier.format(content, {
-      ...options,
-      filepath: fileName,
-      plugins: [sveltePlugin, astroPlugin],
-    });
-  } catch {
-    return null;
-  }
-}
-
-async function formatWithOxfmt(
-  fileName: string,
-  content: string,
-  options: Record<string, unknown>,
-): Promise<string> {
-  const res = await format(fileName, content, options);
-  return res.errors.length === 0 ? res.code : "ERROR";
+function runTask(task: LiveTask) {
+  progress.total++;
+  return (pool.run(task) as ReturnType<typeof run>).finally(() => {
+    // One overwritten line on a terminal, nothing in a log
+    if (process.stdout.isTTY) {
+      process.stdout.write(`\rRunning ${++progress.done}/${progress.total} comparisons...`);
+    }
+  });
 }
 
 function writeReport(results: CategoryResult[], divergences: Divergence[]) {
@@ -433,6 +408,14 @@ function writeReport(results: CategoryResult[], divergences: Divergence[]) {
           return [name, `- [${name}](${diffRelPath})`];
         });
         lines.push(...listDivergences(divergences, items), "");
+      }
+      // A bug, no divergence: as `conformance:prettier` lists them
+      if (r.nonIdempotent.length > 0) {
+        lines.push("#### Not idempotent (as written)", "");
+        for (const [name, errored] of r.nonIdempotent) {
+          lines.push(`- ${name}${errored ? " (second pass errored)" : ""}`);
+        }
+        lines.push("");
       }
     }
   }

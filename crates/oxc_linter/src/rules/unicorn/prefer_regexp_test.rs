@@ -9,10 +9,10 @@ use oxc_syntax::operator::UnaryOperator;
 
 use crate::{
     AstNode,
-    ast_util::{get_declaration_of_variable, outermost_paren_parent},
+    ast_util::{get_symbol_id_of_variable, outermost_paren_parent},
     context::LintContext,
     rule::Rule,
-    utils::is_logical_expression,
+    utils::{is_logical_expression, is_regexp_callee},
 };
 
 fn prefer_regexp_test_diagnostic(span: Span) -> OxcDiagnostic {
@@ -54,7 +54,7 @@ declare_oxc_lint!(
     unicorn,
     pedantic,
     recommended,
-    fix,
+    fix_suggestion,
     version = "0.0.16",
     short_description = "Prefers `RegExp#test()` over `String#match()` and `String#exec()`.",
 );
@@ -176,32 +176,34 @@ impl Rule for PreferRegexpTest {
     }
 }
 
-/// A RegExp literal, `new RegExp(..)` / `RegExp(..)`, or a `const` bound to one.
-fn is_known_regexp<'a>(expr: &Expression<'a>, ctx: &LintContext<'a>) -> bool {
-    match expr.get_inner_expression() {
-        Expression::RegExpLiteral(_) => true,
-        Expression::NewExpression(new_expr) => is_global_regexp(&new_expr.callee, ctx),
-        Expression::CallExpression(call_expr) => is_global_regexp(&call_expr.callee, ctx),
-        Expression::Identifier(ident) => {
-            let Some(declaration) = get_declaration_of_variable(ident, ctx) else {
-                return false;
-            };
-            let AstKind::VariableDeclarator(declarator) = declaration.kind() else {
-                return false;
-            };
-            matches!(ctx.nodes().parent_kind(declaration.id()), AstKind::VariableDeclaration(declaration) if declaration.kind.is_const())
-                && declarator.init.as_ref().is_some_and(|init| {
-                    !matches!(init.get_inner_expression(), Expression::Identifier(_))
-                        && is_known_regexp(init, ctx)
-                })
+fn is_known_regexp<'a>(expression: &Expression<'a>, ctx: &LintContext<'a>) -> bool {
+    let mut expr = expression.get_inner_expression();
+    if let Expression::Identifier(ident) = expr {
+        let Some(symbol) = get_symbol_id_of_variable(ident, ctx) else { return false };
+        if ctx.scoping().symbol_is_mutated(symbol)
+            || !ctx.scoping().symbol_redeclarations(symbol).is_empty()
+        {
+            return false;
         }
+        let AstKind::VariableDeclarator(declaration) =
+            ctx.nodes().kind(ctx.scoping().symbol_declaration(symbol))
+        else {
+            return false;
+        };
+        if !declaration.id.is_binding_identifier()
+            || matches!(ctx.nodes().parent_kind(ctx.scoping().symbol_declaration(symbol)), AstKind::VariableDeclaration(declaration) if declaration.kind.is_var())
+        {
+            return false;
+        }
+        let Some(init) = &declaration.init else { return false };
+        expr = init.get_inner_expression();
+    }
+    match expr {
+        Expression::RegExpLiteral(_) => true,
+        Expression::NewExpression(constructor) => is_regexp_callee(&constructor.callee, ctx),
+        Expression::CallExpression(call) => !call.optional && is_regexp_callee(&call.callee, ctx),
         _ => false,
     }
-}
-
-fn is_global_regexp<'a>(callee: &Expression<'a>, ctx: &LintContext<'a>) -> bool {
-    matches!(callee, Expression::Identifier(ident)
-        if ident.name == "RegExp" && ctx.is_reference_to_global_variable(ident))
 }
 
 #[test]
@@ -390,18 +392,54 @@ fn test() {
         ("const value = (s.match(/x/) || a) ? 1 : 2;", "const value = (/x/.test(s) || a) ? 1 : 2;"),
         ("const value = Boolean(a && s.match(/x/));", "const value = Boolean(a && /x/.test(s));"),
         ("const value = !(a || /x/.exec(s));", "const value = !(a || /x/.test(s));"),
-        // Reported, never rewritten: nothing says these are RegExps.
-        ("if (foo.match(unknown)) {}", "if (foo.match(unknown)) {}"),
-        (
-            "const ok = (action) => isLoaded.match(action) ? 1 : 2;",
-            "const ok = (action) => isLoaded.match(action) ? 1 : 2;",
-        ),
-        ("if (childProcess.exec(cmd)) {}", "if (childProcess.exec(cmd)) {}"),
-        ("let re = /a/; if (foo.match(re)) {}", "let re = /a/; if (foo.match(re)) {}"),
-        (r#"if (foo.match(new RegExp("a"))) {}"#, r#"if (new RegExp("a").test(foo)) {}"#),
     ];
 
     Tester::new(PreferRegexpTest::NAME, PreferRegexpTest::PLUGIN, pass, fail)
         .expect_fix(fix)
         .test_and_snapshot();
+}
+
+#[test]
+fn test_fix_requires_regexp() {
+    use crate::{fixer::FixKind, tester::Tester};
+
+    let unchanged = [
+        r#"const query = "a"; if (title.match(query)) {}"#,
+        "if (glob.match(file)) {}",
+        r#"let pattern = /a/; pattern = "a"; if (title.match(pattern)) {}"#,
+        "function f(RegExp) { if (title.match(new RegExp('a'))) {} }",
+        "if (title.match(getPattern())) {}",
+        "if (title.match(RegExp?.('a'))) {}",
+        "const title = 'a'; if (title.match(re)) {} var re = /a/;",
+        "if (false) { var re = /a/; } if (title.match(re)) {}",
+        "var re = /a/; var re = 'a'; if (title.match(re)) {}",
+        "if (childProcess.exec(cmd)) {}",
+    ];
+    let mut fixes: Vec<_> =
+        unchanged.into_iter().map(|source| (source, source, None, FixKind::Fix)).collect();
+    fixes.extend([
+        ("if (title.match((/a/))) {}", "if ((/a/).test(title)) {}", None, FixKind::Fix),
+        ("if (title.match(RegExp('a'))) {}", "if (RegExp('a').test(title)) {}", None, FixKind::Fix),
+        (
+            "const re = new RegExp('a'); if (title.match(re)) {}",
+            "const re = new RegExp('a'); if (re.test(title)) {}",
+            None,
+            FixKind::Fix,
+        ),
+        (
+            "const re = /a/; if (title.match((re))) {}",
+            "const re = /a/; if ((re).test(title)) {}",
+            None,
+            FixKind::Fix,
+        ),
+        ("if (/a/.exec(title)) {}", "if (/a/.test(title)) {}", None, FixKind::Fix),
+    ]);
+    Tester::new(
+        PreferRegexpTest::NAME,
+        PreferRegexpTest::PLUGIN,
+        Vec::<&str>::new(),
+        unchanged.to_vec(),
+    )
+    .expect_fix(fixes)
+    .test();
 }

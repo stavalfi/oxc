@@ -103,10 +103,15 @@ pub async fn run_cli(
         Mode::Cli(_) => {
             init_rayon(command.runtime_options.threads);
 
-            let result = WalkRunner::new(command)
-                .with_external_services(Some(external_services.clone()))
-                .with_js_config_loader(Arc::clone(&js_config_loader))
-                .run();
+            // `run()` blocks until all files are formatted, so release this Tokio worker's core.
+            // Prettier workers spawn `jsTextToDoc()` onto this runtime,
+            // with a single worker (e.g. 1 vCPU) it would never run.
+            let result = tokio::task::block_in_place(|| {
+                WalkRunner::new(command)
+                    .with_external_services(Some(external_services.clone()))
+                    .with_js_config_loader(Arc::clone(&js_config_loader))
+                    .run()
+            });
 
             ("cli".to_string(), Some(result.exit_code()))
         }
@@ -173,7 +178,6 @@ pub async fn js_text_to_doc(
     source_ext: String,
     source_text: String,
     oxfmt_plugin_options_json: String,
-    parent_context: String,
     #[napi(
         ts_arg_type = "(options: Record<string, any>, code: string) => Promise<{ ok: true; code: string; } | { ok: false; error: string }>"
     )]
@@ -191,7 +195,6 @@ pub async fn js_text_to_doc(
         &source_ext,
         &source_text,
         &oxfmt_plugin_options_json,
-        &parent_context,
         format_file_cb,
         format_embedded_doc_cb,
         sort_tailwind_classes_cb,

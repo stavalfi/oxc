@@ -77,13 +77,13 @@ impl FixtureFormatter for JsonHarness {
         true
     }
 
-    fn format(source: &str, _path: &Path, options: &Self::Options) -> String {
+    fn format(
+        source: &str,
+        _path: &Path,
+        options: &Self::Options,
+    ) -> Result<String, Box<dyn std::error::Error>> {
         let allocator = Allocator::default();
-        format(&allocator, source, *options)
-            .expect("format should succeed")
-            .print()
-            .expect("print should succeed")
-            .into_code()
+        Ok(format(&allocator, source, *options)?.print()?.into_code())
     }
 
     fn fingerprint(source: &str, _path: &Path, options: &Self::Options) -> Fingerprint {
@@ -118,8 +118,18 @@ fn invalid_json_is_err() {
     // `json` / `jsonc` / `json5` share one printer, `json-stringify` has its own
     for variant in [JsonVariant::Json, JsonVariant::JsonStringify] {
         let options = JsonFormatOptions { variant, ..Default::default() };
-        // Unary other than `+` / `-` before a number, `Infinity` or `NaN`
-        for source in ["!true", "typeof Infinity", "-true", "-undefined", "-(-1)", "+ +1"] {
+        // Unary other than `+` / `-` before a number, `Infinity` or `NaN`, and computed keys
+        for source in [
+            "!true",
+            "typeof Infinity",
+            "-true",
+            "-undefined",
+            "-(-1)",
+            "+ +1",
+            r#"{ ["a"]: 1 }"#,
+            "{ [1]: 1 }",
+            "{ [1n]: 1 }",
+        ] {
             let allocator = Allocator::default();
             assert!(format(&allocator, source, options).is_err(), "{variant:?}: {source:?}");
         }

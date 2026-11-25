@@ -10,8 +10,8 @@ mod block_statement;
 mod call_like_expression;
 mod class;
 mod decorators;
+mod embedded;
 mod export_declarations;
-mod fragment;
 mod function;
 mod function_type;
 mod import_declaration;
@@ -23,7 +23,6 @@ mod object_like;
 mod object_pattern_like;
 mod parameters;
 mod program;
-pub use program::FormatProgramBody;
 mod return_or_throw_statement;
 pub mod semicolon;
 mod sequence_expression;
@@ -39,11 +38,14 @@ pub use arrow_function_expression::{
     FormatJsArrowFunctionExpression, FormatJsArrowFunctionExpressionOptions,
 };
 pub use binary_like_expression::{BinaryLikeExpression, BinaryLikeOperator, should_flatten};
-pub use fragment::{FormatFunctionParams, FormatTypeParameters};
+pub use embedded::{
+    FormatName, FormatRoot, check_root, object_prints_double_brace, root_wrapper, split_host_suffix,
+};
 pub use semicolon::write_comments_before_closing_paren;
 pub use template::embed_hug;
 pub use union_type::{
-    alias_union_breaks_after_operator, is_line_ending_trailing_jsdoc_comment, type_alias_left_end,
+    alias_union_breaks_after_operator, alias_union_owns_break,
+    is_line_ending_trailing_jsdoc_comment, should_hug_type, type_alias_left_end,
     union_prints_itself,
 };
 
@@ -58,7 +60,7 @@ use crate::{
     ast_nodes::{AstNode, AstNodeKind, AstNodes},
     best_fitting, format_args,
     formatter::{
-        JsFormatter,
+        JsFormatter, TopLevelSemicolons,
         prelude::*,
         separated::FormatSeparatedIter,
         token::number::{format_number_token, format_trimmed_number, is_simple_number},
@@ -89,7 +91,7 @@ use crate::{
             write_trailing_comments_before,
         },
         string::{FormatLiteralStringToken, StringLiteralParentKind},
-        tailwindcss::{tailwind_context_for_string_literal, write_tailwind_string_literal},
+        tailwindcss::{tailwind_context_for_class_list, write_tailwind_string_literal},
         typecast::is_cast_target,
     },
     write,
@@ -102,7 +104,6 @@ use self::{
     object_like::ObjectLike,
     object_pattern_like::ObjectPatternLike,
     program::FormatStatementsWithImports,
-    return_or_throw_statement::FormatAdjacentArgument,
     semicolon::{
         FormatContentWithSemicolon, OptionalSemicolon, semicolon_terminated_expression_content_end,
         write_trailing_comments_inside_parens,
@@ -190,9 +191,7 @@ impl<'a> FormatWrite<'a> for AstNode<'_, 'a, ObjectExpression<'a>> {
     fn write(&self, f: &mut JsFormatter<'_, 'a>) {
         if f.options().quote_properties.is_consistent() {
             let quote_needed = self.properties.iter().any(|kind| {
-                kind.as_property().is_some_and(|property| {
-                    should_preserve_quote(&property.key, property.computed, f)
-                })
+                kind.as_property().is_some_and(|property| should_preserve_quote(&property.key, f))
             });
             f.context_mut().push_quote_needed(quote_needed);
         }
@@ -243,7 +242,7 @@ impl<'a> FormatWrite<'a> for AstNode<'_, 'a, ObjectProperty<'a>> {
             if value.generator() {
                 write!(f, "*");
             }
-            format_property_key(&self.key(), self.computed, f);
+            format_property_key(&self.key(), f);
 
             format_grouped_parameters_with_return_type_for_method(
                 value.type_parameters(),
@@ -528,15 +527,6 @@ impl<'a> FormatWrite<'a> for AstNode<'_, 'a, EmptyStatement> {
     }
 }
 
-/// Whether the embedding decided this program's sole statement prints without its semicolon (see `crate::format_to_ir`):
-/// no trailing one, and no ASI guard under `semi: false` either.
-fn is_semicolon_omitted_by_embedding(
-    stmt: &AstNode<'_, '_, ExpressionStatement<'_>>,
-    f: &JsFormatter<'_, '_>,
-) -> bool {
-    f.context().embedding_omits_semicolon() && matches!(stmt.parent(), AstNodes::Program(_))
-}
-
 /// Returns `true` if the expression needs a leading semicolon to prevent ASI issues.
 ///
 /// `verbatim` is set for a suppressed statement, whose printed form is the source text:
@@ -546,7 +536,14 @@ fn expression_statement_needs_semicolon<'a>(
     f: &JsFormatter<'_, 'a>,
     verbatim: bool,
 ) -> bool {
-    if is_semicolon_omitted_by_embedding(stmt, f) {
+    // The embedded program omits its semicolon (`TopLevelSemicolons::Omitted`): no ASI guard either
+    if f.context().top_level_semicolons() == TopLevelSemicolons::Omitted(stmt.span) {
+        return false;
+    }
+    // The program writes the `;` that ends the previous statement (`TopLevelSemicolons::Separated`)
+    if f.context().top_level_semicolons() == TopLevelSemicolons::Separated
+        && matches!(stmt.parent(), AstNodes::Program(_))
+    {
         return false;
     }
 
@@ -673,7 +670,7 @@ impl<'a> FormatWrite<'a> for AstNode<'_, 'a, ExpressionStatement<'a>> {
         write_leading_comments_with_asi_guard(self, false, f);
 
         let expression = self.expression();
-        if is_semicolon_omitted_by_embedding(self, f) {
+        if f.context().top_level_semicolons() == TopLevelSemicolons::Omitted(self.span) {
             write!(f, expression);
             return;
         }
@@ -1103,8 +1100,17 @@ impl<'a> FormatWrite<'a> for AstNode<'_, 'a, BindingPattern<'a>> {
 
 impl<'a> FormatWrite<'a> for AstNode<'_, 'a, FormalParameterRest<'a>> {
     fn write(&self, f: &mut JsFormatter<'_, 'a>) {
-        write!(f, [self.rest()]);
-        write!(f, self.type_annotation());
+        let content = format_with(|f| {
+            write!(f, [self.rest()]);
+            write!(f, self.type_annotation());
+        });
+        // Decorators are laid out as on `FormalParameter`, an undecorated rest parameter stays ungrouped
+        let decorators = self.decorators();
+        if decorators.is_empty() {
+            write!(f, [content]);
+        } else {
+            write!(f, [group(&decorators), group(&content)]);
+        }
     }
 }
 
@@ -1147,15 +1153,6 @@ impl<'a> FormatWrite<'a> for AstNode<'_, 'a, BindingRestElement<'a>> {
     }
 }
 
-impl<'a> FormatWrite<'a> for AstNode<'_, 'a, YieldExpression<'a>> {
-    fn write(&self, f: &mut JsFormatter<'_, 'a>) {
-        write!(f, ["yield", self.delegate().then_some("*")]);
-        if let Some(argument) = &self.argument() {
-            write!(f, [space(), FormatAdjacentArgument(argument)]);
-        }
-    }
-}
-
 impl<'a> FormatWrite<'a> for AstNode<'_, 'a, V8IntrinsicExpression<'a>> {
     fn write(&self, f: &mut JsFormatter<'_, 'a>) {
         write!(f, ["%", self.name(), self.arguments()]);
@@ -1185,14 +1182,16 @@ impl<'a> FormatWrite<'a> for AstNode<'_, 'a, NumericLiteral<'a>> {
         // We need to check that this literal's span matches the key's span, not just that the parent is a property.
         // Computed keys like `[1]` are expressions, so they are never quoted.
         let (key_span, computed) = match self.parent() {
-            AstNodes::ObjectProperty(prop) => (prop.key.span(), prop.computed),
-            AstNodes::BindingProperty(prop) => (prop.key.span(), prop.computed),
-            AstNodes::AssignmentTargetPropertyProperty(prop) => (prop.name.span(), prop.computed),
-            AstNodes::TSPropertySignature(prop) => (prop.key.span(), prop.computed),
-            AstNodes::TSMethodSignature(prop) => (prop.key.span(), prop.computed),
-            AstNodes::MethodDefinition(prop) => (prop.key.span(), prop.computed),
-            AstNodes::PropertyDefinition(prop) => (prop.key.span(), prop.computed),
-            AstNodes::AccessorProperty(prop) => (prop.key.span(), prop.computed),
+            AstNodes::ObjectProperty(prop) => (prop.key.span(), prop.key.is_computed()),
+            AstNodes::BindingProperty(prop) => (prop.key.span(), prop.key.is_computed()),
+            AstNodes::AssignmentTargetPropertyProperty(prop) => {
+                (prop.name.span(), prop.name.is_computed())
+            }
+            AstNodes::TSPropertySignature(prop) => (prop.key.span(), prop.key.is_computed()),
+            AstNodes::TSMethodSignature(prop) => (prop.key.span(), prop.key.is_computed()),
+            AstNodes::MethodDefinition(prop) => (prop.key.span(), prop.key.is_computed()),
+            AstNodes::PropertyDefinition(prop) => (prop.key.span(), prop.key.is_computed()),
+            AstNodes::AccessorProperty(prop) => (prop.key.span(), prop.key.is_computed()),
             _ => (Span::default(), true),
         };
         let is_property_key = !computed && key_span == self.span();
@@ -1237,7 +1236,7 @@ impl<'a> FormatWrite<'a> for AstNode<'_, 'a, StringLiteral<'a>> {
     fn write(&self, f: &mut JsFormatter<'_, 'a>) {
         // Check if we're in a Tailwind context via stack (O(1) lookup)
         // This handles nested string literals inside JSXAttribute/CallExpression values
-        if let Some(ctx) = tailwind_context_for_string_literal(self, f) {
+        if let Some(ctx) = tailwind_context_for_class_list(self, f) {
             // We're inside a Tailwind context - sort this string literal as Tailwind classes
             write_tailwind_string_literal(self, ctx, f);
         } else {
@@ -1384,7 +1383,15 @@ impl<'a> FormatWrite<'a> for AstNode<'_, 'a, TSTypeAnnotation<'a>> {
                 // Line comment after the `:` drops the type to column 0 (`let v: // c` + `Foo`, Prettier too);
                 // a break + indent as after `=` would keep it under the name.
                 // See AGENTS.md "Open debts".
-                write!(f, [":", space(), self.type_annotation()]);
+                let type_annotation = self.type_annotation();
+                if f.comments().has_comment_in_range(self.span.start, type_annotation.span().start)
+                {
+                    // A group of its own, or an enclosing break (a member list's) puts a block comment after `:`
+                    // on its own line: `a: /** c */ B` stays on one line when it fits
+                    write!(f, [":", space(), group(&type_annotation)]);
+                } else {
+                    write!(f, [":", space(), type_annotation]);
+                }
             }
         }
     }
@@ -1735,13 +1742,11 @@ impl<'a> FormatWrite<'a> for AstNode<'_, 'a, TSPropertySignature<'a>> {
         if self.readonly() {
             write!(f, ["readonly", space()]);
         }
-        format_property_key(&self.key(), self.computed(), f);
+        format_property_key(&self.key(), f);
         if self.optional() {
             write!(f, "?");
         }
-        if let Some(type_annotation) = &self.type_annotation() {
-            write!(f, type_annotation);
-        }
+        write!(f, self.type_annotation());
     }
 }
 
@@ -1804,12 +1809,12 @@ impl<'a> Format<'a, JsFormatContext<'a>> for AstNode<'_, 'a, ArenaVec<'a, TSSign
             let quote_needed = self.as_ref().iter().any(|signature| {
                 match signature {
                     TSSignature::TSPropertySignature(property) => {
-                        should_preserve_quote(&property.key, property.computed, f)
+                        should_preserve_quote(&property.key, f)
                     }
                     TSSignature::TSMethodSignature(method) => {
                         // A quoted `new` method keeps its quotes, so it forces quoting the sibling members as well
                         is_quoted_new_method_signature(method)
-                            || should_preserve_quote(&method.key, method.computed, f)
+                            || should_preserve_quote(&method.key, f)
                     }
                     _ => false,
                 }

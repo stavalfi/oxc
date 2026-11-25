@@ -7,26 +7,30 @@ use cow_utils::CowUtils;
 
 use oxc_allocator::{Allocator, StringBuilder};
 use oxc_formatter_core::{
-    Format, FormatElement, arena_cow_str,
+    FormatElement, arena_cow_str,
     builders::{
-        group, hard_line_break, if_group_breaks, if_group_fits_on_line, indent, soft_block_indent,
-        soft_line_break, soft_line_break_or_space, space, text,
+        expand_parent, hard_line_break, if_group_breaks, if_group_fits_on_line, indent,
+        soft_block_indent, soft_line_break, soft_line_break_or_space, space, text,
     },
     spec::is_suppression_marker,
     write,
 };
-use oxc_htmlish_parser::ast::{Attribute, NodeId, NodeKind, Quote};
+use oxc_htmlish_parser::ast::{
+    AngularAttribute, Attribute, AttributeKind, NodeId, NodeKind, Quote, StartTagComment,
+};
 
 use super::{
-    HtmlishFormatter,
+    HtmlishFormatter, angular,
     embed::{
         CssInHtmlStyleAttribute, JsInHtmlEventHandler, is_event_handler, write_attribute_value,
+        write_quoted,
     },
     format_with,
     tag::opening_end_borrowed,
+    vue,
 };
 use crate::{
-    context::HtmlishFormatContext,
+    rules::TemplateExpressions,
     tree::{Tree, collapse_whitespace},
 };
 
@@ -60,7 +64,8 @@ pub fn write_attributes<'a>(t: &'a Tree<'a>, id: NodeId, f: &mut HtmlishFormatte
     let force_not_to_break = t.tag(id) == "script"
         && matches!(el.attributes.as_slice(), [only] if t.attribute_is(only.name.slice(t.source()), "src"))
         && item.first_child.is_none();
-    let per_line = single_attribute_per_line && el.attributes.len() > 1;
+    // Not on a Vue block's own lines
+    let per_line = single_attribute_per_line && el.attributes.len() > 1 && !t.is_sfc_block(id);
     let ignored = ignored_attributes(t, id);
     let is_ignored = |name: &str| {
         ignored.is_some_and(|names| {
@@ -76,9 +81,16 @@ pub fn write_attributes<'a>(t: &'a Tree<'a>, id: NodeId, f: &mut HtmlishFormatte
             } else {
                 write!(f, soft_line_break_or_space());
             }
-            for (i, attribute) in el.attributes.iter().enumerate() {
-                if i > 0 {
-                    if per_line {
+            let mut prev_end = None;
+            for attribute in &el.attributes {
+                if let Some(prev_end) = prev_end {
+                    // A `//` comment stays on the line of the attribute it follows
+                    // (DIVERGENCES.md#angular-start-tag-line-comment-placement)
+                    if is_line_comment(attribute)
+                        && t.line_breaks(prev_end, attribute.name.start) == 0
+                    {
+                        write!(f, space());
+                    } else if per_line {
                         write!(f, hard_line_break());
                     } else {
                         write!(f, soft_line_break_or_space());
@@ -86,18 +98,25 @@ pub fn write_attributes<'a>(t: &'a Tree<'a>, id: NodeId, f: &mut HtmlishFormatte
                 }
                 let name = attribute.name.slice(t.source());
                 if is_ignored(name) {
-                    write!(f, text(attribute.span.slice(t.source())));
+                    write!(f, text(attribute.span().slice(t.source())));
                 } else {
                     write_attribute(t, id, attribute, f);
                 }
+                if is_line_comment(attribute) {
+                    write!(f, expand_parent());
+                }
+                prev_end = Some(attribute.span().end);
             }
         }))
     );
 
-    let hug_end = opening_end_borrowed(t, id)
+    // Nothing follows a `//` comment on its line, the tag's end neither (DIVERGENCES.md#angular-start-tag-line-comment-end)
+    let hug_end = (opening_end_borrowed(t, id)
         || (item.self_closing && t[t.parent(id)].borrows.last_child_closing_end)
-        || force_not_to_break;
-    if hug_end || bracket_same_line {
+        || force_not_to_break
+        || bracket_same_line)
+        && !el.attributes.last().is_some_and(|last| is_line_comment(last));
+    if hug_end {
         if slash {
             write!(f, space());
         }
@@ -108,10 +127,15 @@ pub fn write_attributes<'a>(t: &'a Tree<'a>, id: NodeId, f: &mut HtmlishFormatte
     }
 }
 
+/// An Angular start-tag comment `//`, which runs to the line's end.
+fn is_line_comment(attribute: &Attribute<'_>) -> bool {
+    matches!(attribute.kind, AttributeKind::Comment(StartTagComment::Line))
+}
+
 fn write_attribute<'a>(
     t: &'a Tree<'a>,
     element: NodeId,
-    attribute: &Attribute<'a>,
+    attribute: &'a Attribute<'a>,
     f: &mut HtmlishFormatter<'_, 'a>,
 ) {
     let source = t.source();
@@ -129,12 +153,56 @@ fn write_attribute<'a>(
         return;
     }
     let raw = unescaped(value, f);
+    // A Vue attribute whose value is JS prints as written where it does not format (as Prettier does)
+    if t.rules().template_expressions == TemplateExpressions::Vue
+        && let Some(kind) = vue::value_kind(t, element, attribute)
+    {
+        if !vue::write_attribute_value(t, kind, raw, f) {
+            write_quoted_value(raw, f);
+        }
+        return;
+    }
+    // An Angular binding's or action's value prints as written where it does not format (as Prettier does)
+    let formatted = match &attribute.kind {
+        // No code, which a binding reads alike however much whitespace (an action reports it)
+        AttributeKind::Angular(AngularAttribute::Property(..) | AngularAttribute::TwoWay(..))
+            if raw.trim_ascii().is_empty() =>
+        {
+            write!(f, "\"\"");
+            Some(true)
+        }
+        AttributeKind::Angular(kind @ AngularAttribute::Property(expression, _)) => {
+            let tailwind = t
+                .tailwind()
+                .is_some_and(|tailwind| tailwind.binds(kind.target(attribute.name).slice(source)));
+            Some(angular::write_binding(expression.as_deref(), raw, tailwind, f))
+        }
+        // A two-way binding's value reads as a property binding's
+        AttributeKind::Angular(AngularAttribute::TwoWay(expression, _)) => {
+            Some(angular::write_binding(expression.as_deref(), raw, false, f))
+        }
+        AttributeKind::Angular(AngularAttribute::Event(action, _)) => {
+            Some(angular::write_action(action.as_deref(), f))
+        }
+        AttributeKind::Angular(AngularAttribute::Template(bindings)) => Some(
+            angular::write_template_bindings(bindings.as_deref().map(|b| b.as_slice()), raw, f),
+        ),
+        AttributeKind::Angular(AngularAttribute::Interpolation(interpolations)) => Some(
+            !t.keeps_angular_value(element, attribute)
+                && angular::write_value_interpolations(attribute, interpolations, f),
+        ),
+        _ => None,
+    };
+    if let Some(formatted) = formatted {
+        if !formatted {
+            write_quoted_value(raw, f);
+        }
+        return;
+    }
     let class = is("class");
     // A placeholder would hide in the sorted class list, out of the parent's reach
-    let tailwind =
-        f.options().sort_tailwindcss.as_ref().is_some_and(|attributes| {
-            class || attributes.iter().any(|attribute| attribute == name)
-        }) && !embedded_in.is_some_and(|e| e.has_placeholder(value));
+    let tailwind = t.tailwind().is_some_and(|tailwind| class || tailwind.holds(name))
+        && !embedded_in.is_some_and(|e| e.has_placeholder(value));
     if tailwind && write_tailwind_classes(raw, class && embedded_in.is_none(), f) {
         return;
     }
@@ -198,13 +266,20 @@ fn write_tailwind_classes<'a>(
 fn write_quoted_value<'a>(raw: &'a str, f: &mut HtmlishFormatter<'_, 'a>) {
     let doubles = raw.bytes().filter(|&b| b == b'"').count();
     let singles = raw.bytes().filter(|&b| b == b'\'').count();
-    let (quote, escaped) = if doubles > singles { ("'", "&apos;") } else { ("\"", "&quot;") };
-    let printed = arena_cow_str(&raw.cow_replace(quote, escaped), f);
+    // A `char` pattern: a 1-char `&str` would build a substring searcher per call
+    let (quote, pattern, escaped) =
+        if doubles > singles { ("'", '\'', "&apos;") } else { ("\"", '"', "&quot;") };
+    // The chosen quote is the rarer one, so most values have none to escape
+    let printed = if doubles.min(singles) == 0 {
+        raw
+    } else {
+        arena_cow_str(&raw.cow_replace(pattern, escaped), f)
+    };
     write!(f, [text(quote), text(printed), text(quote)]);
 }
 
 /// `&apos;` and `&quot;` read back.
-fn unescaped<'a>(value: &'a str, f: &HtmlishFormatter<'_, 'a>) -> &'a str {
+pub(super) fn unescaped<'a>(value: &'a str, f: &HtmlishFormatter<'_, 'a>) -> &'a str {
     if !value.contains('&') {
         return value;
     }
@@ -218,14 +293,6 @@ fn unescaped<'a>(value: &'a str, f: &HtmlishFormatter<'_, 'a>) -> &'a str {
 /// `"` re-escaped for a value printed in `"`.
 pub(super) fn quoted_piece<'a>(piece: &'a str, f: &HtmlishFormatter<'_, 'a>) -> &'a str {
     arena_cow_str(&piece.cow_replace('"', "&quot;"), f)
-}
-
-/// `content` in quotes, on its own indented lines when the group breaks.
-pub(super) fn write_expanded<'a>(
-    content: &impl Format<'a, HtmlishFormatContext<'a>>,
-    f: &mut HtmlishFormatter<'_, 'a>,
-) {
-    write!(f, ["\"", group(&soft_block_indent(content)), "\""]);
 }
 
 struct Candidate<'a> {
@@ -243,8 +310,8 @@ fn write_srcset<'a>(candidates: &[Candidate<'a>], f: &mut HtmlishFormatter<'_, '
     let mut padding = StringBuilder::new_in(f.allocator());
     padding.push_ascii_byte_repeat(b' ', max_url + 1 + max_left);
     let padding = padding.into_str();
-    write_expanded(
-        &format_with(|f| {
+    write_quoted(
+        &soft_block_indent(&format_with(|f| {
             for (i, c) in candidates.iter().enumerate() {
                 if i > 0 {
                     write!(f, [",", soft_line_break_or_space()]);
@@ -264,7 +331,7 @@ fn write_srcset<'a>(candidates: &[Candidate<'a>], f: &mut HtmlishFormatter<'_, '
                     );
                 }
             }
-        }),
+        })),
         f,
     );
 }
@@ -361,8 +428,8 @@ fn write_permissions_policy<'a>(value: &'a str, f: &mut HtmlishFormatter<'_, 'a>
         write!(f, "\"\"");
         return;
     }
-    write_expanded(
-        &format_with(|f| {
+    write_quoted(
+        &soft_block_indent(&format_with(|f| {
             for (i, directive) in directives.iter().enumerate() {
                 write!(f, text(directive));
                 if i + 1 == directives.len() {
@@ -371,7 +438,7 @@ fn write_permissions_policy<'a>(value: &'a str, f: &mut HtmlishFormatter<'_, 'a>
                     write!(f, [";", soft_line_break_or_space()]);
                 }
             }
-        }),
+        })),
         f,
     );
 }

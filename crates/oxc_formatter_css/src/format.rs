@@ -4,14 +4,14 @@ use oxc_allocator::{Allocator, ArenaVec};
 use oxc_diagnostics::OxcDiagnostic;
 use oxc_formatter_core::{
     Document, EmbeddedIr, Format, FormatSession, FormatState, Formatted, Formatter, InputKind,
-    builders::{empty_line, hard_line_break, text},
+    builders::{empty_line, hard_line_break, soft_block_indent, text},
     spec::{FrontMatter, blank_front_matter, parse_front_matter, split_bom},
     write,
 };
 use oxc_span::Span;
 
 use crate::{
-    TEMPLATE_PLACEHOLDER_PREFIX, TEMPLATE_PLACEHOLDER_SUFFIX,
+    TEMPLATE_PLACEHOLDER,
     comments::CssComment,
     context::CssFormatContext,
     options::CssFormatOptions,
@@ -189,7 +189,7 @@ pub enum CssRoot {
     /// An embedded part (JSDoc / Markdown code block): the root parses as a block's contents,
     /// so a root declaration is a statement (AGENTS.md "Error semantics").
     Fragment,
-    /// A [`Self::Fragment`] from a css-in-js template, with `` `PLACEHOLDER-N` `` markers.
+    /// A [`Self::Fragment`] from a css-in-js template, with `` `oxfmt_css_N` `` markers.
     CssInJsTemplate,
 }
 
@@ -244,12 +244,13 @@ fn parse_stylesheet<'a>(
         .options(ParserOptions {
             // Derive the affix from the host sentinel (single source of truth),
             // minus the leading backtick which oxc-css-parser consumes as the placeholder sigil
-            // (the closing backtick `TEMPLATE_PLACEHOLDER_SUFFIX` is fixed in oxc-css-parser).
+            // (the closing backtick, `TEMPLATE_PLACEHOLDER.suffix`, is fixed in oxc-css-parser).
             // Only valid for SCSS; oxc-css-parser asserts that.
             template_placeholder: (root == CssRoot::CssInJsTemplate).then_some(
                 TemplatePlaceholder {
-                    prefix: TEMPLATE_PLACEHOLDER_PREFIX
-                        .strip_prefix(TEMPLATE_PLACEHOLDER_SUFFIX)
+                    prefix: TEMPLATE_PLACEHOLDER
+                        .prefix
+                        .strip_prefix(TEMPLATE_PLACEHOLDER.suffix)
                         .expect("placeholder prefix starts with a backtick"),
                 },
             ),
@@ -267,7 +268,7 @@ fn parse_stylesheet<'a>(
 
     let comments: &'a [CssComment] = ArenaVec::from_iter_in(
         parser.comments().iter().map(|c| CssComment {
-            span: to_span(&c.span),
+            span: to_span(c.span),
             inline: matches!(c.kind, oxc_css_parser::token::CommentKind::Line),
         }),
         &allocator,
@@ -278,14 +279,11 @@ fn parse_stylesheet<'a>(
 }
 
 fn to_diagnostic(error: &oxc_css_parser::error::Error) -> OxcDiagnostic {
-    OxcDiagnostic::error(format!("Syntax error: {}", error.kind)).with_label(to_span(&error.span))
+    OxcDiagnostic::error(format!("Syntax error: {}", error.kind)).with_label(to_span(error.span))
 }
 
-pub fn to_span(span: &oxc_css_parser::Span) -> Span {
-    Span::new(
-        u32::try_from(span.start).unwrap_or(u32::MAX),
-        u32::try_from(span.end).unwrap_or(u32::MAX),
-    )
+pub fn to_span(span: oxc_css_parser::Span) -> Span {
+    Span::new(span.start, span.end)
 }
 
 fn write_front_matter<'a>(fm: &FrontMatter<'a>, f: &mut CssFormatter<'_, 'a>) {
@@ -334,7 +332,7 @@ impl<'a> Format<'a, CssFormatContext<'a>> for FormatCssRoot<'_, 'a> {
 
 /// Emits the stylesheet only; no BOM, no final newline
 /// (front matter still prints for a `VirtualDocument`, whose complete-document envelope the host hands over;
-/// the surrounding layout stays the host's).
+/// the surrounding layout stays the host's, but a `style` attribute's, laid out here: the host only quotes it).
 struct FormatCssEmbedded<'b, 'a> {
     stylesheet: &'b Stylesheet<'a>,
     front_matter: Option<FrontMatter<'a>>,
@@ -342,6 +340,15 @@ struct FormatCssEmbedded<'b, 'a> {
 
 impl<'a> Format<'a, CssFormatContext<'a>> for FormatCssEmbedded<'_, 'a> {
     fn fmt(&self, f: &mut CssFormatter<'_, 'a>) {
+        // A `style` attribute's declarations go on their own indented lines when they break
+        if f.context().is_style_attribute() {
+            if has_content(self.stylesheet, f) {
+                let stylesheet =
+                    print::format_with(|f| print::write_stylesheet(self.stylesheet, f));
+                write!(f, soft_block_indent(&stylesheet));
+            }
+            return;
+        }
         if let Some(fm) = &self.front_matter {
             let has_content = has_content(self.stylesheet, f);
             write_front_matter(fm, f);

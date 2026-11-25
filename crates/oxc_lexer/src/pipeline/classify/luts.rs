@@ -1,129 +1,181 @@
-use crate::pipeline::{
-    bytes::{is_digit, is_ws},
-    keywords::{is_kw_init, is_kw_init_ts},
-    operators::is_op_char,
-};
+use oxc_simd::VecData128;
+
+use crate::pipeline::keywords::{is_kw_init, is_kw_init_ts};
 
 /// Nibble lookup tables which classify bytes as keyword-initial letters, operator chars, or `.`.
 ///
 /// "Merged" because one lookup answers all three questions.
-/// `classify_impl` looks up each byte's low nibble in `lo` and its high nibble in `hi` with `vpshufb`,
-/// and ANDs the results. For an ASCII byte `c`, `lo[c & 15] & hi[c >> 4]` has these bits set:
+/// The SIMD implementations of `classify` look up each byte's low nibble in `lo`
+/// and its high nibble in `hi`, and AND the results.
+/// For an ASCII byte `b`, `lo[b & 15] & hi[b >> 4]` has these bits set:
 ///
-/// * Bits 0-1: `c` can start a keyword.
-/// * Bits 2-5: `c` is an operator char.
-/// * Bit 7: `c` is `.`. It's the top bit, so a movemask extracts it without a compare.
+/// - Bits 0-1: Keyword start.
+/// - Bits 2-5: Operator char.
+/// - Bit  7:   Dot (`.`).
+///
+/// Bit 6 is unused.
+///
+/// Dot is the top bit, so a movemask extracts it without a compare.
+///
+/// AVX2 detects operator chars with a signed `> KWINIT_MASK`, then adds `.` from the dot bit.
+/// Neon detects them with an unsigned `> KWINIT_MASK`, which includes `.`.
+/// Both rely on bit 6 staying unused.
 ///
 /// Each bit covers only one row of 16 bytes which share a high nibble.
-/// `hi[h]` sets the bits whose row is `h`, and `lo[l]` sets a bit if byte `(h << 4) | l` is in its class,
-/// so the AND is exact. A class spanning several rows needs a bit per row
+/// `hi[h]` sets the bits whose row is `h`, and `lo[l]` sets a bit if byte `(h << 4) | l`
+/// is in its class, so the AND is exact. A class spanning several rows needs a bit per row
 /// (e.g. keyword-initial letters take 2 bits, one for `a`-`o` and one for `p`-`z`).
 ///
-/// Bytes >= 0x80 get no bits, because `vpshufb` outputs 0 for an index with its top bit set.
+/// Non-ASCII bytes (>= 0x80) get no bits set, because `hi` has no entries for rows 8-15.
+/// Additionally, on AVX2 `vpshufb` outputs 0 for an index with its top bit set, so `lo[b]`
+/// (`b` without `& 15` mask) evaluates to 0. Neon masks `b & 15` and relies on `hi`.
 ///
 /// `lo_ts` is the TypeScript version of `lo`, which has more keyword-initial letters.
 /// The other bits, and `hi`, are the same for both.
 pub(super) struct MergedLuts {
-    pub lo: [u8; 16],
-    pub hi: [u8; 16],
-    pub lo_ts: [u8; 16],
+    pub lo: VecData128,
+    pub hi: VecData128,
+    pub lo_ts: VecData128,
 }
 
+/// Bits of a [`MERGED_LUTS`] lookup which are set if a byte can start a keyword.
+pub(super) const KWINIT_MASK: u8 = 0b_0000_0011;
+/// Bits of a [`MERGED_LUTS`] lookup which are set if a byte is an operator char.
+///
+/// Only used in tests. AVX2 and Neon both compare against [`KWINIT_MASK`] instead.
+#[cfg(test)]
+pub(super) const OPCH_MASK: u8 = 0b_0011_1100;
+/// Bit of a [`MERGED_LUTS`] lookup which is set if a byte is `.`.
+pub(super) const DOT_MASK: u8 = 0b_1000_0000;
+
 pub(super) const MERGED_LUTS: MergedLuts = {
-    let mut mrg_lo = [0; 16];
-    let mut mrg_hi = [0; 16];
-    let mut mrg_lo_ts = [0; 16];
+    let mut lo = [0; 16];
+    let mut hi = [0; 16];
+    let mut lo_ts = [0; 16];
 
-    const ROWS: [(u8, u8, u8); 7] =
-        [(6, 0, 0), (7, 1, 0), (2, 2, 1), (3, 3, 1), (5, 4, 1), (7, 5, 1), (2, 7, 2)];
+    let mut b = 0u8;
+    while b < 128 {
+        // `bits_ts` is the TS variant - only the keyword-start bits differ
+        let mut bits = 0;
+        let mut bits_ts = 0;
 
-    let mut i = 0;
-    while i < ROWS.len() {
-        let (hi, bit, set) = ROWS[i];
-
-        let mut lo = 0u8;
-        while lo < 16 {
-            let c = (hi << 4) | lo;
-            let inset = match set {
-                0 => is_kw_init(c),
-                1 => is_op_char(c),
-                _ => c == b'.',
-            };
-            if inset {
-                mrg_lo[lo as usize] |= 1u8 << bit;
+        let keyword_bit_index = match b {
+            b'a'..=b'o' => Some(0), // Row 6
+            b'p'..=b'z' => Some(1), // Row 7
+            _ => None,
+        };
+        if let Some(bit_index) = keyword_bit_index {
+            if is_kw_init(b) {
+                bits |= 1 << bit_index;
+            } else if is_kw_init_ts(b) {
+                bits_ts |= 1 << bit_index;
             }
-            // TS variant: only the keyword-initial rows differ.
-            let inset_ts = if set == 0 { is_kw_init_ts(c) } else { inset };
-            if inset_ts {
-                mrg_lo_ts[lo as usize] |= 1u8 << bit;
-            }
-
-            lo += 1;
         }
-        mrg_hi[hi as usize] |= 1u8 << bit;
 
-        i += 1;
+        let op_bit_index = match b {
+            b'!' | b'%' | b'&' | b'*' | b'+' | b'-' | b'.' => Some(2), // Row 2
+            b'<' | b'=' | b'>' | b'?' => Some(3),                      // Row 3
+            b'^' => Some(4),                                           // Row 5
+            b'|' => Some(5),                                           // Row 7
+            _ => None,
+        };
+        if let Some(bit_index) = op_bit_index {
+            bits |= 1 << bit_index;
+        }
+
+        if b == b'.' {
+            bits |= 1 << 7;
+        }
+
+        lo[(b & 15) as usize] |= bits;
+        lo_ts[(b & 15) as usize] |= bits | bits_ts;
+        hi[(b >> 4) as usize] |= bits | bits_ts;
+
+        b += 1;
     }
 
-    MergedLuts { lo: mrg_lo, hi: mrg_hi, lo_ts: mrg_lo_ts }
+    MergedLuts {
+        lo: VecData128::from_bytes(lo),
+        hi: VecData128::from_bytes(hi),
+        lo_ts: VecData128::from_bytes(lo_ts),
+    }
 };
 
 /// Nibble lookup tables which classify bytes as identifier chars or whitespace.
 ///
 /// Works the same way as [`MergedLuts`].
-/// For an ASCII byte `c`, `lo[c & 15] & hi[c >> 4]` has these bits set:
+/// For an ASCII byte `b`, `lo[b & 15] & hi[b >> 4]` has these bits set:
 ///
-/// * Bits 0-5: `c` is an identifier char. One bit per row: `$`, digits, `A`-`O`, `P`-`Z` and `_`,
-///   `a`-`o`, `p`-`z`. Bit 1 (digits) also serves as the digit class.
-/// * Bit 6: `c` is whitespace other than space (tab, line feed etc).
-/// * Bit 7: `c` is space.
+/// - Bits 0-4: Identifier chars, including digits (a-z, A-Z, 0-9, _, $).
+/// - Bit  1:   Digits (0-9).
+/// - Bits 5-7: ASCII whitespace (space, tab, LF, CR, VT, FF).
+/// - Bit  7:   Irregular ASCII whitespace (VT, FF).
 ///
-/// Bytes >= 0x80 get no bits. `classify_impl` counts them as identifier chars separately.
+/// Non-ASCII bytes (>= 0x80) get no bits.
+/// The SIMD implementations of `classify` count them as identifier chars separately.
 pub(super) struct WordLuts {
-    pub lo: [u8; 16],
-    pub hi: [u8; 16],
+    pub lo: VecData128,
+    pub hi: VecData128,
 }
 
+/// Bits of a [`WORD_LUTS`] lookup which are set if a byte is an identifier char.
+pub(super) const WORD_MASK: u8 = 0b_0001_1111;
+/// Bit of a [`WORD_LUTS`] lookup which is set if a byte is a digit.
+pub(super) const DIGIT_MASK: u8 = 0b_0000_0010;
+/// Bits of a [`WORD_LUTS`] lookup which are set if a byte is whitespace.
+pub(super) const WS_MASK: u8 = 0b_1110_0000;
+/// Bit of a [`WORD_LUTS`] lookup which is set if a byte is vertical tab or form feed.
+pub(super) const VT_FF_MASK: u8 = 0b_1000_0000;
+
 pub(super) const WORD_LUTS: WordLuts = {
-    let mut wb_lo = [0; 16];
-    let mut wb_hi = [0; 16];
+    const VT: u8 = 0xB;
+    const FF: u8 = 0xC;
 
-    const BROWS: [(u8, u8); 8] = [(2, 0), (3, 1), (4, 2), (5, 3), (6, 4), (7, 5), (0, 6), (2, 7)];
+    let mut lo = [0; 16];
+    let mut hi = [0; 16];
 
-    let mut i = 0;
-    while i < BROWS.len() {
-        let (hi, bit) = BROWS[i];
+    let mut b = 0u8;
+    while b < 128 {
+        let bit_index = match b {
+            // Word bits.
+            // A-O and a-o share bit 2, which stays exact because their low nibbles are the same.
+            b'$' => Some(0),               // Row 2
+            b'0'..=b'9' => Some(1),        // Row 3
+            b'A'..=b'O' => Some(2),        // Row 4
+            b'a'..=b'o' => Some(2),        // Row 6
+            b'P'..=b'Z' | b'_' => Some(3), // Row 5
+            b'p'..=b'z' => Some(4),        // Row 7
 
-        let mut lo = 0u8;
-        while lo < 16 {
-            let c = (hi << 4) | lo;
-            let inset = match bit {
-                0 => c == b'$',
-                1 => is_digit(c),
-                2 => c >= b'A' && c <= b'O',
-                3 => (c >= b'P' && c <= b'Z') || c == b'_',
-                4 => c >= b'a' && c <= b'o',
-                5 => c >= b'p' && c <= b'z',
-                6 => is_ws(c) && c != b' ',
-                _ => c == b' ',
-            };
-            if inset {
-                wb_lo[lo as usize] |= 1u8 << bit;
-            }
+            // Whitespace bits.
+            // Space is in a different row from the others, so needs its own bit.
+            // VT and FF have their own bit, for `VT_FF_MASK`.
+            b' ' => Some(5),                  // Row 2
+            b'\t' | b'\n' | b'\r' => Some(6), // Row 0
+            VT | FF => Some(7),               // Row 0
 
-            lo += 1;
+            _ => None,
+        };
+
+        if let Some(bit_index) = bit_index {
+            let bits = 1 << bit_index;
+            lo[(b & 15) as usize] |= bits;
+            hi[(b >> 4) as usize] |= bits;
         }
-        wb_hi[hi as usize] |= 1u8 << bit;
 
-        i += 1;
+        b += 1;
     }
 
-    WordLuts { lo: wb_lo, hi: wb_hi }
+    WordLuts { lo: VecData128::from_bytes(lo), hi: VecData128::from_bytes(hi) }
 };
 
 #[cfg(test)]
 mod tests {
-    use crate::pipeline::bytes::is_word;
+    use oxc_simd::BASELINE;
+
+    use crate::pipeline::{
+        bytes::{is_digit, is_word, is_ws},
+        operators::is_op_char,
+    };
 
     use super::*;
 
@@ -133,19 +185,19 @@ mod tests {
             let cb = c as u8;
 
             let t = if c < 0x80 { MERGED_LUTS.lo[c & 15] & MERGED_LUTS.hi[c >> 4] } else { 0 };
-            let kw = (t & 0x03) != 0;
-            let opp = (t & 0x3C) != 0;
-            let dt = (t & 0x80) != 0;
+            let kw = (t & KWINIT_MASK) != 0;
+            let opp = (t & OPCH_MASK) != 0;
+            let dt = (t & DOT_MASK) != 0;
             assert!(
-                kw == is_kw_init(cb) && opp == is_op_char(cb) && dt == (cb == b'.'),
+                kw == is_kw_init(cb) && opp == is_op_char(cb, BASELINE) && dt == (cb == b'.'),
                 "MERGED_LUTS.lo / hi wrong at byte {c:#04x}"
             );
 
             let ts_t =
                 if c < 0x80 { MERGED_LUTS.lo_ts[c & 15] & MERGED_LUTS.hi[c >> 4] } else { 0 };
-            let ts_kw = (ts_t & 0x03) != 0;
-            let ts_opp = (ts_t & 0x3C) != 0;
-            let ts_dt = (ts_t & 0x80) != 0;
+            let ts_kw = (ts_t & KWINIT_MASK) != 0;
+            let ts_opp = (ts_t & OPCH_MASK) != 0;
+            let ts_dt = (ts_t & DOT_MASK) != 0;
             assert!(
                 ts_kw == is_kw_init_ts(cb) && ts_opp == opp && ts_dt == dt,
                 "MERGED_LUTS.lo_ts wrong at byte {c:#04x}"
@@ -159,11 +211,15 @@ mod tests {
             let cb = c as u8;
 
             let tb = if c < 0x80 { WORD_LUTS.lo[c & 15] & WORD_LUTS.hi[c >> 4] } else { 0 };
-            let wd = (c >= 0x80) || (tb & 0x3F) != 0;
-            let ws = (tb & 0xC0) != 0;
-            let dg = (tb & 0x02) != 0;
+            let wd = (c >= 0x80) || (tb & WORD_MASK) != 0;
+            let ws = (tb & WS_MASK) != 0;
+            let dg = (tb & DIGIT_MASK) != 0;
+            let vt_ff = (tb & VT_FF_MASK) != 0;
             assert!(
-                wd == is_word(cb) && ws == is_ws(cb) && dg == is_digit(cb),
+                wd == is_word(cb, BASELINE)
+                    && ws == is_ws(cb, BASELINE)
+                    && dg == is_digit(cb, BASELINE)
+                    && vt_ff == matches!(cb, 0x0b | 0x0c),
                 " WORD_LUTS.lo / hi wrong at byte {c:#04x}"
             );
         }
