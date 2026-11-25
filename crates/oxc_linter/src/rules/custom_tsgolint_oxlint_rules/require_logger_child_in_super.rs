@@ -39,7 +39,8 @@ declare_oxc_lint!(
     custom_tsgolint_oxlint_rules,
     restriction,
     version = "1.86.0",
-    short_description = "Require `logger: logger.child({ name: X.name })` in an ADisposable's `super(...)` call.",
+    short_description =
+        "Require `logger: logger.child({ name: X.name })` in an ADisposable's `super(...)` call.",
 );
 
 impl Rule for RequireLoggerChildInSuper {}

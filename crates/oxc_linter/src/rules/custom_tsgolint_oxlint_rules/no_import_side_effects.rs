@@ -24,8 +24,8 @@ declare_oxc_lint!(
     /// Examples of **correct** code for this rule:
     /// ```ts
     /// export class Clients {
-///   public static make(): Client { return new Client(); }
-/// }
+    ///   public static make(): Client { return new Client(); }
+    /// }
     /// ```
     NoImportSideEffects(tsgolint),
     custom_tsgolint_oxlint_rules,

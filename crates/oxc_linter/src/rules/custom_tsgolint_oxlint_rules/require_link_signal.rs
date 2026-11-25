@@ -10,7 +10,7 @@ declare_oxc_lint!(
     ///
     /// In a class that inherits `linkSignal`, disallows using a method's
     /// `AbortSignal` parameter anywhere except as the argument of
-    /// `super.linkSignal({ signal })`.
+    /// `super.linkSignal({ signal })`. Private methods are covered too.
     ///
     /// ### Why is this bad?
     ///

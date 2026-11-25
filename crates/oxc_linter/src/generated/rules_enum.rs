@@ -11,6 +11,7 @@
 use crate::rule::RuleInfo;
 pub use crate::rules::custom_tsgolint_oxlint_rules::async_dispose_last::AsyncDisposeLast as CustomTsgolintOxlintRulesAsyncDisposeLast;
 pub use crate::rules::custom_tsgolint_oxlint_rules::class_name_matches_filename::ClassNameMatchesFilename as CustomTsgolintOxlintRulesClassNameMatchesFilename;
+pub use crate::rules::custom_tsgolint_oxlint_rules::link_signal_first_statement::LinkSignalFirstStatement as CustomTsgolintOxlintRulesLinkSignalFirstStatement;
 pub use crate::rules::custom_tsgolint_oxlint_rules::logger_name_matches_class::LoggerNameMatchesClass as CustomTsgolintOxlintRulesLoggerNameMatchesClass;
 pub use crate::rules::custom_tsgolint_oxlint_rules::new_only_in_constructor::NewOnlyInConstructor as CustomTsgolintOxlintRulesNewOnlyInConstructor;
 pub use crate::rules::custom_tsgolint_oxlint_rules::no_anonymous_functions::NoAnonymousFunctions as CustomTsgolintOxlintRulesNoAnonymousFunctions;
@@ -1861,6 +1862,9 @@ pub enum RuleEnum {
     CustomTsgolintOxlintRulesClassNameMatchesFilename(
         CustomTsgolintOxlintRulesClassNameMatchesFilename,
     ),
+    CustomTsgolintOxlintRulesLinkSignalFirstStatement(
+        CustomTsgolintOxlintRulesLinkSignalFirstStatement,
+    ),
     CustomTsgolintOxlintRulesLoggerNameMatchesClass(
         CustomTsgolintOxlintRulesLoggerNameMatchesClass,
     ),
@@ -2829,63 +2833,64 @@ const VUE_VALID_DEFINE_PROPS_ID: usize = 883usize;
 const VUE_VALID_NEXT_TICK_ID: usize = 884usize;
 const CUSTOM_TSGOLINT_OXLINT_RULES_ASYNC_DISPOSE_LAST_ID: usize = 885usize;
 const CUSTOM_TSGOLINT_OXLINT_RULES_CLASS_NAME_MATCHES_FILENAME_ID: usize = 886usize;
-const CUSTOM_TSGOLINT_OXLINT_RULES_LOGGER_NAME_MATCHES_CLASS_ID: usize = 887usize;
-const CUSTOM_TSGOLINT_OXLINT_RULES_NEW_ONLY_IN_CONSTRUCTOR_ID: usize = 888usize;
-const CUSTOM_TSGOLINT_OXLINT_RULES_NO_ANONYMOUS_FUNCTIONS_ID: usize = 889usize;
-const CUSTOM_TSGOLINT_OXLINT_RULES_NO_ARRAY_LENGTH_ASSIGNMENT_ID: usize = 890usize;
-const CUSTOM_TSGOLINT_OXLINT_RULES_NO_ASYNC_GLOBAL_FUNCTIONS_ID: usize = 891usize;
-const CUSTOM_TSGOLINT_OXLINT_RULES_NO_ASYNC_STATIC_METHOD_ID: usize = 892usize;
-const CUSTOM_TSGOLINT_OXLINT_RULES_NO_BANNED_TYPES_IN_EXPORTS_ID: usize = 893usize;
-const CUSTOM_TSGOLINT_OXLINT_RULES_NO_BANNED_WORDS_ID: usize = 894usize;
-const CUSTOM_TSGOLINT_OXLINT_RULES_NO_BARE_LOGGER_OUTSIDE_SUPER_ID: usize = 895usize;
-const CUSTOM_TSGOLINT_OXLINT_RULES_NO_CLIENT_RESPONSE_JSON_ID: usize = 896usize;
-const CUSTOM_TSGOLINT_OXLINT_RULES_NO_COMMENTS_ID: usize = 897usize;
-const CUSTOM_TSGOLINT_OXLINT_RULES_NO_CURL_ID: usize = 898usize;
-const CUSTOM_TSGOLINT_OXLINT_RULES_NO_DISPOSE_ASSIGNMENT_ID: usize = 899usize;
-const CUSTOM_TSGOLINT_OXLINT_RULES_NO_GLOBAL_FUNCTIONS_ID: usize = 900usize;
-const CUSTOM_TSGOLINT_OXLINT_RULES_NO_IMPORT_SIDE_EFFECTS_ID: usize = 901usize;
-const CUSTOM_TSGOLINT_OXLINT_RULES_NO_INFINITE_LOOP_ID: usize = 902usize;
-const CUSTOM_TSGOLINT_OXLINT_RULES_NO_OBJECT_DESTRUCTURING_ID: usize = 903usize;
-const CUSTOM_TSGOLINT_OXLINT_RULES_NO_PASSTHROUGH_FUNCTIONS_ID: usize = 904usize;
-const CUSTOM_TSGOLINT_OXLINT_RULES_NO_PRIMITIVE_COLLECTION_KEY_ID: usize = 905usize;
-const CUSTOM_TSGOLINT_OXLINT_RULES_NO_PRIMITIVE_DEFAULT_ID: usize = 906usize;
-const CUSTOM_TSGOLINT_OXLINT_RULES_NO_PRIVATE_KEYWORD_ID: usize = 907usize;
-const CUSTOM_TSGOLINT_OXLINT_RULES_NO_PROCESS_STREAM_WRITE_ID: usize = 908usize;
-const CUSTOM_TSGOLINT_OXLINT_RULES_NO_PROTECTED_ID: usize = 909usize;
-const CUSTOM_TSGOLINT_OXLINT_RULES_NO_SINGLE_USE_CONST_ID: usize = 910usize;
-const CUSTOM_TSGOLINT_OXLINT_RULES_NO_SINGLE_USE_INTERFACE_ID: usize = 911usize;
-const CUSTOM_TSGOLINT_OXLINT_RULES_NO_STATIC_WITH_THIS_ARGS_ID: usize = 912usize;
-const CUSTOM_TSGOLINT_OXLINT_RULES_NO_STRING_ERROR_ID: usize = 913usize;
-const CUSTOM_TSGOLINT_OXLINT_RULES_NO_EXPORT_RENAME_ID: usize = 914usize;
-const CUSTOM_TSGOLINT_OXLINT_RULES_NO_STRING_RAW_ID: usize = 915usize;
-const CUSTOM_TSGOLINT_OXLINT_RULES_NO_TRACKED_CLOSE_ID: usize = 916usize;
-const CUSTOM_TSGOLINT_OXLINT_RULES_NO_USELESS_TEMPLATE_CAST_ID: usize = 917usize;
-const CUSTOM_TSGOLINT_OXLINT_RULES_NO_VOID_PROMISE_ID: usize = 918usize;
-const CUSTOM_TSGOLINT_OXLINT_RULES_NO_ZOD_DEFAULTS_ID: usize = 919usize;
-const CUSTOM_TSGOLINT_OXLINT_RULES_NO_ZOD_PASSTHROUGH_ID: usize = 920usize;
-const CUSTOM_TSGOLINT_OXLINT_RULES_PREFER_AWAIT_TO_CALLBACKS_ID: usize = 921usize;
-const CUSTOM_TSGOLINT_OXLINT_RULES_PREFER_SUPER_OVER_THIS_ID: usize = 922usize;
-const CUSTOM_TSGOLINT_OXLINT_RULES_REQUIRE_ABORT_RETHROW_ID: usize = 923usize;
-const CUSTOM_TSGOLINT_OXLINT_RULES_REQUIRE_ABORT_SIGNAL_ID: usize = 924usize;
-const CUSTOM_TSGOLINT_OXLINT_RULES_REQUIRE_ABORT_SIGNAL_IN_WHILE_ID: usize = 925usize;
-const CUSTOM_TSGOLINT_OXLINT_RULES_REQUIRE_ACCESS_MODIFIERS_ID: usize = 926usize;
-const CUSTOM_TSGOLINT_OXLINT_RULES_REQUIRE_ASYNC_DISPOSABLE_ID: usize = 927usize;
-const CUSTOM_TSGOLINT_OXLINT_RULES_REQUIRE_ASYNC_QUEUE_ID: usize = 928usize;
-const CUSTOM_TSGOLINT_OXLINT_RULES_REQUIRE_CATCH_BINDING_ID: usize = 929usize;
-const CUSTOM_TSGOLINT_OXLINT_RULES_REQUIRE_CONSTANT_ENV_KEY_ID: usize = 930usize;
-const CUSTOM_TSGOLINT_OXLINT_RULES_REQUIRE_FS_UTF_8_ID: usize = 931usize;
-const CUSTOM_TSGOLINT_OXLINT_RULES_REQUIRE_IT_TIMEOUT_ID: usize = 932usize;
-const CUSTOM_TSGOLINT_OXLINT_RULES_REQUIRE_LINK_SIGNAL_ID: usize = 933usize;
-const CUSTOM_TSGOLINT_OXLINT_RULES_REQUIRE_LOGGER_CHILD_IN_SUPER_ID: usize = 934usize;
-const CUSTOM_TSGOLINT_OXLINT_RULES_REQUIRE_OBJECT_PARAMS_ID: usize = 935usize;
-const CUSTOM_TSGOLINT_OXLINT_RULES_REQUIRE_OS_EOL_ID: usize = 936usize;
-const CUSTOM_TSGOLINT_OXLINT_RULES_REQUIRE_TRACK_ID: usize = 937usize;
-const CUSTOM_TSGOLINT_OXLINT_RULES_REQUIRE_TYPE_ANNOTATION_ID: usize = 938usize;
-const CUSTOM_TSGOLINT_OXLINT_RULES_REQUIRE_ZOD_COMPILE_ID: usize = 939usize;
-const CUSTOM_TSGOLINT_OXLINT_RULES_REQUIRE_ZOD_DESCRIBE_ID: usize = 940usize;
-const CUSTOM_TSGOLINT_OXLINT_RULES_SUPER_FIRST_STATEMENT_ID: usize = 941usize;
-const CUSTOM_TSGOLINT_OXLINT_RULES_ZOD_SCHEMAS_FILE_ONLY_ID: usize = 942usize;
-static RULE_NAMES: [&str; 943usize] = [
+const CUSTOM_TSGOLINT_OXLINT_RULES_LINK_SIGNAL_FIRST_STATEMENT_ID: usize = 887usize;
+const CUSTOM_TSGOLINT_OXLINT_RULES_LOGGER_NAME_MATCHES_CLASS_ID: usize = 888usize;
+const CUSTOM_TSGOLINT_OXLINT_RULES_NEW_ONLY_IN_CONSTRUCTOR_ID: usize = 889usize;
+const CUSTOM_TSGOLINT_OXLINT_RULES_NO_ANONYMOUS_FUNCTIONS_ID: usize = 890usize;
+const CUSTOM_TSGOLINT_OXLINT_RULES_NO_ARRAY_LENGTH_ASSIGNMENT_ID: usize = 891usize;
+const CUSTOM_TSGOLINT_OXLINT_RULES_NO_ASYNC_GLOBAL_FUNCTIONS_ID: usize = 892usize;
+const CUSTOM_TSGOLINT_OXLINT_RULES_NO_ASYNC_STATIC_METHOD_ID: usize = 893usize;
+const CUSTOM_TSGOLINT_OXLINT_RULES_NO_BANNED_TYPES_IN_EXPORTS_ID: usize = 894usize;
+const CUSTOM_TSGOLINT_OXLINT_RULES_NO_BANNED_WORDS_ID: usize = 895usize;
+const CUSTOM_TSGOLINT_OXLINT_RULES_NO_BARE_LOGGER_OUTSIDE_SUPER_ID: usize = 896usize;
+const CUSTOM_TSGOLINT_OXLINT_RULES_NO_CLIENT_RESPONSE_JSON_ID: usize = 897usize;
+const CUSTOM_TSGOLINT_OXLINT_RULES_NO_COMMENTS_ID: usize = 898usize;
+const CUSTOM_TSGOLINT_OXLINT_RULES_NO_CURL_ID: usize = 899usize;
+const CUSTOM_TSGOLINT_OXLINT_RULES_NO_DISPOSE_ASSIGNMENT_ID: usize = 900usize;
+const CUSTOM_TSGOLINT_OXLINT_RULES_NO_GLOBAL_FUNCTIONS_ID: usize = 901usize;
+const CUSTOM_TSGOLINT_OXLINT_RULES_NO_IMPORT_SIDE_EFFECTS_ID: usize = 902usize;
+const CUSTOM_TSGOLINT_OXLINT_RULES_NO_INFINITE_LOOP_ID: usize = 903usize;
+const CUSTOM_TSGOLINT_OXLINT_RULES_NO_OBJECT_DESTRUCTURING_ID: usize = 904usize;
+const CUSTOM_TSGOLINT_OXLINT_RULES_NO_PASSTHROUGH_FUNCTIONS_ID: usize = 905usize;
+const CUSTOM_TSGOLINT_OXLINT_RULES_NO_PRIMITIVE_COLLECTION_KEY_ID: usize = 906usize;
+const CUSTOM_TSGOLINT_OXLINT_RULES_NO_PRIMITIVE_DEFAULT_ID: usize = 907usize;
+const CUSTOM_TSGOLINT_OXLINT_RULES_NO_PRIVATE_KEYWORD_ID: usize = 908usize;
+const CUSTOM_TSGOLINT_OXLINT_RULES_NO_PROCESS_STREAM_WRITE_ID: usize = 909usize;
+const CUSTOM_TSGOLINT_OXLINT_RULES_NO_PROTECTED_ID: usize = 910usize;
+const CUSTOM_TSGOLINT_OXLINT_RULES_NO_SINGLE_USE_CONST_ID: usize = 911usize;
+const CUSTOM_TSGOLINT_OXLINT_RULES_NO_SINGLE_USE_INTERFACE_ID: usize = 912usize;
+const CUSTOM_TSGOLINT_OXLINT_RULES_NO_STATIC_WITH_THIS_ARGS_ID: usize = 913usize;
+const CUSTOM_TSGOLINT_OXLINT_RULES_NO_STRING_ERROR_ID: usize = 914usize;
+const CUSTOM_TSGOLINT_OXLINT_RULES_NO_EXPORT_RENAME_ID: usize = 915usize;
+const CUSTOM_TSGOLINT_OXLINT_RULES_NO_STRING_RAW_ID: usize = 916usize;
+const CUSTOM_TSGOLINT_OXLINT_RULES_NO_TRACKED_CLOSE_ID: usize = 917usize;
+const CUSTOM_TSGOLINT_OXLINT_RULES_NO_USELESS_TEMPLATE_CAST_ID: usize = 918usize;
+const CUSTOM_TSGOLINT_OXLINT_RULES_NO_VOID_PROMISE_ID: usize = 919usize;
+const CUSTOM_TSGOLINT_OXLINT_RULES_NO_ZOD_DEFAULTS_ID: usize = 920usize;
+const CUSTOM_TSGOLINT_OXLINT_RULES_NO_ZOD_PASSTHROUGH_ID: usize = 921usize;
+const CUSTOM_TSGOLINT_OXLINT_RULES_PREFER_AWAIT_TO_CALLBACKS_ID: usize = 922usize;
+const CUSTOM_TSGOLINT_OXLINT_RULES_PREFER_SUPER_OVER_THIS_ID: usize = 923usize;
+const CUSTOM_TSGOLINT_OXLINT_RULES_REQUIRE_ABORT_RETHROW_ID: usize = 924usize;
+const CUSTOM_TSGOLINT_OXLINT_RULES_REQUIRE_ABORT_SIGNAL_ID: usize = 925usize;
+const CUSTOM_TSGOLINT_OXLINT_RULES_REQUIRE_ABORT_SIGNAL_IN_WHILE_ID: usize = 926usize;
+const CUSTOM_TSGOLINT_OXLINT_RULES_REQUIRE_ACCESS_MODIFIERS_ID: usize = 927usize;
+const CUSTOM_TSGOLINT_OXLINT_RULES_REQUIRE_ASYNC_DISPOSABLE_ID: usize = 928usize;
+const CUSTOM_TSGOLINT_OXLINT_RULES_REQUIRE_ASYNC_QUEUE_ID: usize = 929usize;
+const CUSTOM_TSGOLINT_OXLINT_RULES_REQUIRE_CATCH_BINDING_ID: usize = 930usize;
+const CUSTOM_TSGOLINT_OXLINT_RULES_REQUIRE_CONSTANT_ENV_KEY_ID: usize = 931usize;
+const CUSTOM_TSGOLINT_OXLINT_RULES_REQUIRE_FS_UTF_8_ID: usize = 932usize;
+const CUSTOM_TSGOLINT_OXLINT_RULES_REQUIRE_IT_TIMEOUT_ID: usize = 933usize;
+const CUSTOM_TSGOLINT_OXLINT_RULES_REQUIRE_LINK_SIGNAL_ID: usize = 934usize;
+const CUSTOM_TSGOLINT_OXLINT_RULES_REQUIRE_LOGGER_CHILD_IN_SUPER_ID: usize = 935usize;
+const CUSTOM_TSGOLINT_OXLINT_RULES_REQUIRE_OBJECT_PARAMS_ID: usize = 936usize;
+const CUSTOM_TSGOLINT_OXLINT_RULES_REQUIRE_OS_EOL_ID: usize = 937usize;
+const CUSTOM_TSGOLINT_OXLINT_RULES_REQUIRE_TRACK_ID: usize = 938usize;
+const CUSTOM_TSGOLINT_OXLINT_RULES_REQUIRE_TYPE_ANNOTATION_ID: usize = 939usize;
+const CUSTOM_TSGOLINT_OXLINT_RULES_REQUIRE_ZOD_COMPILE_ID: usize = 940usize;
+const CUSTOM_TSGOLINT_OXLINT_RULES_REQUIRE_ZOD_DESCRIBE_ID: usize = 941usize;
+const CUSTOM_TSGOLINT_OXLINT_RULES_SUPER_FIRST_STATEMENT_ID: usize = 942usize;
+const CUSTOM_TSGOLINT_OXLINT_RULES_ZOD_SCHEMAS_FILE_ONLY_ID: usize = 943usize;
+static RULE_NAMES: [&str; 944usize] = [
     ImportConsistentTypeSpecifierStyle::NAME,
     ImportDefault::NAME,
     ImportExport::NAME,
@@ -3773,6 +3778,7 @@ static RULE_NAMES: [&str; 943usize] = [
     VueValidNextTick::NAME,
     CustomTsgolintOxlintRulesAsyncDisposeLast::NAME,
     CustomTsgolintOxlintRulesClassNameMatchesFilename::NAME,
+    CustomTsgolintOxlintRulesLinkSignalFirstStatement::NAME,
     CustomTsgolintOxlintRulesLoggerNameMatchesClass::NAME,
     CustomTsgolintOxlintRulesNewOnlyInConstructor::NAME,
     CustomTsgolintOxlintRulesNoAnonymousFunctions::NAME,
@@ -4863,6 +4869,9 @@ impl RuleEnum {
             }
             Self::CustomTsgolintOxlintRulesClassNameMatchesFilename(_) => {
                 CUSTOM_TSGOLINT_OXLINT_RULES_CLASS_NAME_MATCHES_FILENAME_ID
+            }
+            Self::CustomTsgolintOxlintRulesLinkSignalFirstStatement(_) => {
+                CUSTOM_TSGOLINT_OXLINT_RULES_LINK_SIGNAL_FIRST_STATEMENT_ID
             }
             Self::CustomTsgolintOxlintRulesLoggerNameMatchesClass(_) => {
                 CUSTOM_TSGOLINT_OXLINT_RULES_LOGGER_NAME_MATCHES_CLASS_ID
@@ -6116,6 +6125,9 @@ impl RuleEnum {
             Self::CustomTsgolintOxlintRulesClassNameMatchesFilename(_) => {
                 CustomTsgolintOxlintRulesClassNameMatchesFilename::CATEGORY
             }
+            Self::CustomTsgolintOxlintRulesLinkSignalFirstStatement(_) => {
+                CustomTsgolintOxlintRulesLinkSignalFirstStatement::CATEGORY
+            }
             Self::CustomTsgolintOxlintRulesLoggerNameMatchesClass(_) => {
                 CustomTsgolintOxlintRulesLoggerNameMatchesClass::CATEGORY
             }
@@ -7297,6 +7309,9 @@ impl RuleEnum {
             }
             Self::CustomTsgolintOxlintRulesClassNameMatchesFilename(_) => {
                 CustomTsgolintOxlintRulesClassNameMatchesFilename::FIX
+            }
+            Self::CustomTsgolintOxlintRulesLinkSignalFirstStatement(_) => {
+                CustomTsgolintOxlintRulesLinkSignalFirstStatement::FIX
             }
             Self::CustomTsgolintOxlintRulesLoggerNameMatchesClass(_) => {
                 CustomTsgolintOxlintRulesLoggerNameMatchesClass::FIX
@@ -8773,6 +8788,9 @@ impl RuleEnum {
             }
             Self::CustomTsgolintOxlintRulesClassNameMatchesFilename(_) => {
                 CustomTsgolintOxlintRulesClassNameMatchesFilename::documentation()
+            }
+            Self::CustomTsgolintOxlintRulesLinkSignalFirstStatement(_) => {
+                CustomTsgolintOxlintRulesLinkSignalFirstStatement::documentation()
             }
             Self::CustomTsgolintOxlintRulesLoggerNameMatchesClass(_) => {
                 CustomTsgolintOxlintRulesLoggerNameMatchesClass::documentation()
@@ -11506,6 +11524,11 @@ impl RuleEnum {
                     || CustomTsgolintOxlintRulesClassNameMatchesFilename::schema(generator),
                 )
             }
+            Self::CustomTsgolintOxlintRulesLinkSignalFirstStatement(_) => {
+                CustomTsgolintOxlintRulesLinkSignalFirstStatement::config_schema(generator).or_else(
+                    || CustomTsgolintOxlintRulesLinkSignalFirstStatement::schema(generator),
+                )
+            }
             Self::CustomTsgolintOxlintRulesLoggerNameMatchesClass(_) => {
                 CustomTsgolintOxlintRulesLoggerNameMatchesClass::config_schema(generator)
                     .or_else(|| CustomTsgolintOxlintRulesLoggerNameMatchesClass::schema(generator))
@@ -12627,6 +12650,9 @@ impl RuleEnum {
             Self::VueValidNextTick(_) => "vue",
             Self::CustomTsgolintOxlintRulesAsyncDisposeLast(_) => "custom_tsgolint_oxlint_rules",
             Self::CustomTsgolintOxlintRulesClassNameMatchesFilename(_) => {
+                "custom_tsgolint_oxlint_rules"
+            }
+            Self::CustomTsgolintOxlintRulesLinkSignalFirstStatement(_) => {
                 "custom_tsgolint_oxlint_rules"
             }
             Self::CustomTsgolintOxlintRulesLoggerNameMatchesClass(_) => {
@@ -14830,6 +14856,7 @@ impl RuleEnum {
             Self::VueValidNextTick(rule) => rule.run(node, ctx),
             Self::CustomTsgolintOxlintRulesAsyncDisposeLast(rule) => rule.run(node, ctx),
             Self::CustomTsgolintOxlintRulesClassNameMatchesFilename(rule) => rule.run(node, ctx),
+            Self::CustomTsgolintOxlintRulesLinkSignalFirstStatement(rule) => rule.run(node, ctx),
             Self::CustomTsgolintOxlintRulesLoggerNameMatchesClass(rule) => rule.run(node, ctx),
             Self::CustomTsgolintOxlintRulesNewOnlyInConstructor(rule) => rule.run(node, ctx),
             Self::CustomTsgolintOxlintRulesNoAnonymousFunctions(rule) => rule.run(node, ctx),
@@ -15790,6 +15817,7 @@ impl RuleEnum {
             Self::VueValidNextTick(rule) => rule.run_once(ctx),
             Self::CustomTsgolintOxlintRulesAsyncDisposeLast(rule) => rule.run_once(ctx),
             Self::CustomTsgolintOxlintRulesClassNameMatchesFilename(rule) => rule.run_once(ctx),
+            Self::CustomTsgolintOxlintRulesLinkSignalFirstStatement(rule) => rule.run_once(ctx),
             Self::CustomTsgolintOxlintRulesLoggerNameMatchesClass(rule) => rule.run_once(ctx),
             Self::CustomTsgolintOxlintRulesNewOnlyInConstructor(rule) => rule.run_once(ctx),
             Self::CustomTsgolintOxlintRulesNoAnonymousFunctions(rule) => rule.run_once(ctx),
@@ -16748,6 +16776,7 @@ impl RuleEnum {
             Self::VueValidNextTick(rule) => rule.should_run(ctx),
             Self::CustomTsgolintOxlintRulesAsyncDisposeLast(rule) => rule.should_run(ctx),
             Self::CustomTsgolintOxlintRulesClassNameMatchesFilename(rule) => rule.should_run(ctx),
+            Self::CustomTsgolintOxlintRulesLinkSignalFirstStatement(rule) => rule.should_run(ctx),
             Self::CustomTsgolintOxlintRulesLoggerNameMatchesClass(rule) => rule.should_run(ctx),
             Self::CustomTsgolintOxlintRulesNewOnlyInConstructor(rule) => rule.should_run(ctx),
             Self::CustomTsgolintOxlintRulesNoAnonymousFunctions(rule) => rule.should_run(ctx),
@@ -17843,6 +17872,9 @@ impl RuleEnum {
             }
             Self::CustomTsgolintOxlintRulesClassNameMatchesFilename(_) => {
                 CustomTsgolintOxlintRulesClassNameMatchesFilename::FLAGS
+            }
+            Self::CustomTsgolintOxlintRulesLinkSignalFirstStatement(_) => {
+                CustomTsgolintOxlintRulesLinkSignalFirstStatement::FLAGS
             }
             Self::CustomTsgolintOxlintRulesLoggerNameMatchesClass(_) => {
                 CustomTsgolintOxlintRulesLoggerNameMatchesClass::FLAGS
@@ -19102,6 +19134,9 @@ impl RuleEnum {
             Self::CustomTsgolintOxlintRulesClassNameMatchesFilename(_) => {
                 CustomTsgolintOxlintRulesClassNameMatchesFilename::VERSION
             }
+            Self::CustomTsgolintOxlintRulesLinkSignalFirstStatement(_) => {
+                CustomTsgolintOxlintRulesLinkSignalFirstStatement::VERSION
+            }
             Self::CustomTsgolintOxlintRulesLoggerNameMatchesClass(_) => {
                 CustomTsgolintOxlintRulesLoggerNameMatchesClass::VERSION
             }
@@ -20289,6 +20324,9 @@ impl RuleEnum {
             Self::CustomTsgolintOxlintRulesClassNameMatchesFilename(_) => {
                 CustomTsgolintOxlintRulesClassNameMatchesFilename::INFO
             }
+            Self::CustomTsgolintOxlintRulesLinkSignalFirstStatement(_) => {
+                CustomTsgolintOxlintRulesLinkSignalFirstStatement::INFO
+            }
             Self::CustomTsgolintOxlintRulesLoggerNameMatchesClass(_) => {
                 CustomTsgolintOxlintRulesLoggerNameMatchesClass::INFO
             }
@@ -21351,6 +21389,7 @@ impl RuleEnum {
             Self::VueValidNextTick(rule) => rule.types_info(),
             Self::CustomTsgolintOxlintRulesAsyncDisposeLast(rule) => rule.types_info(),
             Self::CustomTsgolintOxlintRulesClassNameMatchesFilename(rule) => rule.types_info(),
+            Self::CustomTsgolintOxlintRulesLinkSignalFirstStatement(rule) => rule.types_info(),
             Self::CustomTsgolintOxlintRulesLoggerNameMatchesClass(rule) => rule.types_info(),
             Self::CustomTsgolintOxlintRulesNewOnlyInConstructor(rule) => rule.types_info(),
             Self::CustomTsgolintOxlintRulesNoAnonymousFunctions(rule) => rule.types_info(),
@@ -22298,6 +22337,7 @@ impl RuleEnum {
             Self::VueValidNextTick(rule) => rule.run_info(),
             Self::CustomTsgolintOxlintRulesAsyncDisposeLast(rule) => rule.run_info(),
             Self::CustomTsgolintOxlintRulesClassNameMatchesFilename(rule) => rule.run_info(),
+            Self::CustomTsgolintOxlintRulesLinkSignalFirstStatement(rule) => rule.run_info(),
             Self::CustomTsgolintOxlintRulesLoggerNameMatchesClass(rule) => rule.run_info(),
             Self::CustomTsgolintOxlintRulesNewOnlyInConstructor(rule) => rule.run_info(),
             Self::CustomTsgolintOxlintRulesNoAnonymousFunctions(rule) => rule.run_info(),
@@ -23390,6 +23430,9 @@ pub static RULES: std::sync::LazyLock<Vec<RuleEnum>> = std::sync::LazyLock::new(
         ),
         RuleEnum::CustomTsgolintOxlintRulesClassNameMatchesFilename(
             CustomTsgolintOxlintRulesClassNameMatchesFilename::default(),
+        ),
+        RuleEnum::CustomTsgolintOxlintRulesLinkSignalFirstStatement(
+            CustomTsgolintOxlintRulesLinkSignalFirstStatement::default(),
         ),
         RuleEnum::CustomTsgolintOxlintRulesLoggerNameMatchesClass(
             CustomTsgolintOxlintRulesLoggerNameMatchesClass::default(),

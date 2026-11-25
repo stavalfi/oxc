@@ -19,7 +19,7 @@ declare_oxc_lint!(
     /// Examples of **incorrect** code for this rule:
     /// ```ts
     /// // adds the two numbers
-/// const sum = a + b;
+    /// const sum = a + b;
     /// ```
     ///
     /// Examples of **correct** code for this rule:

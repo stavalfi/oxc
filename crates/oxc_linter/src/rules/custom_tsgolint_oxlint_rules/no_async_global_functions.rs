@@ -37,10 +37,10 @@ declare_oxc_lint!(
     /// Examples of **correct** code for this rule:
     /// ```ts
     /// class Poller extends ADisposable {
-///   public start(): void {
-///     this.track(this.timers.delay(1000).then(() => this.poll()));
-///   }
-/// }
+    ///   public start(): void {
+    ///     this.track(this.timers.delay(1000).then(() => this.poll()));
+    ///   }
+    /// }
     /// ```
     NoAsyncGlobalFunctions(tsgolint),
     custom_tsgolint_oxlint_rules,

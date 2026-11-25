@@ -24,9 +24,9 @@ declare_oxc_lint!(
     /// Examples of **correct** code for this rule:
     /// ```ts
     /// class Value {
-///   public static make(): number { return 1; }
-/// }
-/// Value.make();
+    ///   public static make(): number { return 1; }
+    /// }
+    /// Value.make();
     /// ```
     NoAnonymousFunctions(tsgolint),
     custom_tsgolint_oxlint_rules,

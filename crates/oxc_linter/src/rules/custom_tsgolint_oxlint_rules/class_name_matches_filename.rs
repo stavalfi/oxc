@@ -19,13 +19,13 @@ declare_oxc_lint!(
     /// Examples of **incorrect** code for this rule:
     /// ```ts
     /// // gh-gateway.service.ts
-/// export class Gateway {}
+    /// export class Gateway {}
     /// ```
     ///
     /// Examples of **correct** code for this rule:
     /// ```ts
     /// // gh-gateway.service.ts
-/// export class GhGatewayService {}
+    /// export class GhGatewayService {}
     /// ```
     ClassNameMatchesFilename(tsgolint),
     custom_tsgolint_oxlint_rules,

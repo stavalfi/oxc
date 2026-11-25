@@ -1003,6 +1003,7 @@ pub(crate) mod vue {
 pub(crate) mod custom_tsgolint_oxlint_rules {
     pub mod async_dispose_last;
     pub mod class_name_matches_filename;
+    pub mod link_signal_first_statement;
     pub mod logger_name_matches_class;
     pub mod new_only_in_constructor;
     pub mod no_anonymous_functions;
@@ -1016,6 +1017,7 @@ pub(crate) mod custom_tsgolint_oxlint_rules {
     pub mod no_comments;
     pub mod no_curl;
     pub mod no_dispose_assignment;
+    pub mod no_export_rename;
     pub mod no_global_functions;
     pub mod no_import_side_effects;
     pub mod no_infinite_loop;
@@ -1030,7 +1032,6 @@ pub(crate) mod custom_tsgolint_oxlint_rules {
     pub mod no_single_use_interface;
     pub mod no_static_with_this_args;
     pub mod no_string_error;
-    pub mod no_export_rename;
     pub mod no_string_raw;
     pub mod no_tracked_close;
     pub mod no_useless_template_cast;

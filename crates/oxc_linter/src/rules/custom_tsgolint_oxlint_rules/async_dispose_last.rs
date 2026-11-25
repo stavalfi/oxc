@@ -19,17 +19,17 @@ declare_oxc_lint!(
     /// Examples of **incorrect** code for this rule:
     /// ```ts
     /// class A {
-///   public async [Symbol.asyncDispose](): Promise<void> {}
-///   public run(): void {}
-/// }
+    ///   public async [Symbol.asyncDispose](): Promise<void> {}
+    ///   public run(): void {}
+    /// }
     /// ```
     ///
     /// Examples of **correct** code for this rule:
     /// ```ts
     /// class A {
-///   public run(): void {}
-///   public async [Symbol.asyncDispose](): Promise<void> {}
-/// }
+    ///   public run(): void {}
+    ///   public async [Symbol.asyncDispose](): Promise<void> {}
+    /// }
     /// ```
     AsyncDisposeLast(tsgolint),
     custom_tsgolint_oxlint_rules,

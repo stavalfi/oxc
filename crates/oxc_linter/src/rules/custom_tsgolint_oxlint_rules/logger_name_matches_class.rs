@@ -19,15 +19,15 @@ declare_oxc_lint!(
     /// Examples of **incorrect** code for this rule:
     /// ```ts
     /// class GatewayService {
-///   public constructor() { logger.child({ name: "gateway" }); }
-/// }
+    ///   public constructor() { logger.child({ name: "gateway" }); }
+    /// }
     /// ```
     ///
     /// Examples of **correct** code for this rule:
     /// ```ts
     /// class GatewayService {
-///   public constructor() { logger.child({ name: GatewayService.name }); }
-/// }
+    ///   public constructor() { logger.child({ name: GatewayService.name }); }
+    /// }
     /// ```
     LoggerNameMatchesClass(tsgolint),
     custom_tsgolint_oxlint_rules,

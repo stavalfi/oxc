@@ -49,7 +49,8 @@ declare_oxc_lint!(
     restriction,
     config = NewOnlyInConstructorConfig,
     version = "1.86.0",
-    short_description = "Disallow constructing a class outside a constructor or property initializer.",
+    short_description =
+        "Disallow constructing a class outside a constructor or property initializer.",
 );
 
 impl Rule for NewOnlyInConstructor {

@@ -34,7 +34,8 @@ declare_oxc_lint!(
     custom_tsgolint_oxlint_rules,
     restriction,
     version = "1.86.0",
-    short_description = "Require services to extend ADisposable and close last in `[Symbol.asyncDispose]`.",
+    short_description =
+        "Require services to extend ADisposable and close last in `[Symbol.asyncDispose]`.",
 );
 
 impl Rule for RequireAsyncDisposable {}

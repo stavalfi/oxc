@@ -24,8 +24,8 @@ declare_oxc_lint!(
     /// Examples of **correct** code for this rule:
     /// ```ts
     /// export class Runner {
-///   public static run(): void {}
-/// }
+    ///   public static run(): void {}
+    /// }
     /// ```
     NoGlobalFunctions(tsgolint),
     custom_tsgolint_oxlint_rules,

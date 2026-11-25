@@ -19,7 +19,7 @@ declare_oxc_lint!(
     /// Examples of **incorrect** code for this rule:
     /// ```ts
     /// const label = "x";
-/// send(label);
+    /// send(label);
     /// ```
     ///
     /// Examples of **correct** code for this rule:

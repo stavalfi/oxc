@@ -41,7 +41,8 @@ declare_oxc_lint!(
     custom_tsgolint_oxlint_rules,
     restriction,
     version = "1.86.0",
-    short_description = "Allow an ADisposable constructor's `logger` parameter only inside `super(...)`.",
+    short_description =
+        "Allow an ADisposable constructor's `logger` parameter only inside `super(...)`.",
 );
 
 impl Rule for NoBareLoggerOutsideSuper {}

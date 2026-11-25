@@ -30,7 +30,8 @@ declare_oxc_lint!(
     custom_tsgolint_oxlint_rules,
     restriction,
     version = "1.86.0",
-    short_description = "Disallow functions that only forward their arguments to another local function.",
+    short_description =
+        "Disallow functions that only forward their arguments to another local function.",
 );
 
 impl Rule for NoPassthroughFunctions {}

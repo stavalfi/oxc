@@ -24,7 +24,7 @@ declare_oxc_lint!(
     /// Examples of **correct** code for this rule:
     /// ```ts
     /// import { EOL } from "node:os";
-/// const joined = `a${EOL}b`;
+    /// const joined = `a${EOL}b`;
     /// ```
     RequireOsEol(tsgolint),
     custom_tsgolint_oxlint_rules,
