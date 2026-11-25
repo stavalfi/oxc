@@ -60,7 +60,14 @@ tar -czf "$out" -C "$(dirname "$stage")" package
 # publishing (OIDC), so there is no token and no 2FA. From a laptop npm rejects
 # it with 403. Every version is a `<tag>-<sha>` prerelease, which npm refuses
 # without an explicit tag.
-npm publish "$out" --access public --tag latest
+# npm attaches provenance to a trusted publish and refuses to verify it from a
+# self-hosted runner (E422 "Only github-hosted runners are supported"), so the
+# fallback runner publishes without it; the OIDC trust itself still applies.
+provenance=()
+if [[ "${RUNNER_ENVIRONMENT:-}" == "self-hosted" ]]; then
+  provenance=(--provenance=false)
+fi
+npm publish "$out" --access public --tag latest "${provenance[@]}"
 
 echo
 echo "poc package.json -> \"oxlint\": \"npm:@stavalfi/oxc@${version}\""
