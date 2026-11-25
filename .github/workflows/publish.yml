@@ -23,8 +23,9 @@ jobs:
     # A manual run can target any branch; only main publishes.
     if: github.ref == 'refs/heads/main'
     # The package ships only the napi addon of the machine that built it, and
-    # poc runs oxlint on darwin-arm64.
-    runs-on: macos-15
+    # poc runs oxlint on darwin-arm64. `macos-latest` rather than a pinned
+    # image: the pinned macos-15 pool left three runs unacquired for 15 min each.
+    runs-on: macos-latest
     steps:
       - uses: actions/checkout@v5
         with:
