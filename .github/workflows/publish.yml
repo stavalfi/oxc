@@ -5,6 +5,11 @@ name: publish
 
 on:
   workflow_dispatch:
+    inputs:
+      runner:
+        description: runs-on label; `self-hosted` when GitHub's macOS arm64 pool is not handing out runners
+        default: macos-15
+        required: true
   push:
     branches:
       - main
@@ -23,9 +28,9 @@ jobs:
     # A manual run can target any branch; only main publishes.
     if: github.ref == 'refs/heads/main'
     # The package ships only the napi addon of the machine that built it, and
-    # poc runs oxlint on darwin-arm64. macos-14: the macos-15 and macos-latest
-    # pools each left runs unacquired for 15 minutes on 2026-11-25.
-    runs-on: macos-14
+    # poc runs oxlint on darwin-arm64. A manual run can name another label
+    # (`self-hosted`) for the days GitHub's macOS arm64 pool hands out nothing.
+    runs-on: ${{ inputs.runner || 'macos-15' }}
     steps:
       - uses: actions/checkout@v5
         with:
